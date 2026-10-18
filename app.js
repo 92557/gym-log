@@ -2,7 +2,7 @@ import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js
 import * as R from './rir.js';
 import { lineChart } from './charts.js';
 
-const VERSION = '6';   // keep in step with the cache name in sw.js
+const VERSION = '7';   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after check-in → Physio Diary
@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS = {
   keepAwake: true,          // screen stays on during a workout
   defaultRest: 90,
   stepBarbell: 2.5, stepDumbbell: 2, stepOther: 2.5,
+  testMode: false,          // practise without anything reaching the sheet
 };
 
 const S = {
@@ -19,6 +20,8 @@ const S = {
   current: null,            // in-progress workout
   local: [],                // sessions saved on the phone but not yet visible in `data`
   done: {},                 // planned-session keys finished/skipped locally
+  testLocal: [],            // test-mode sessions: phone only, never queued for the sheet
+  testDone: {},             // test-mode "done" marks, kept apart from the real ones
   pending: 0,
   syncing: false, lastSync: null, lastError: null,
   view: 'today',
@@ -47,6 +50,10 @@ const kg = w => (w > 0 ? `${+w.toFixed(2)}` : 'BW');
 const isWeighted = name => (S.index.get(key(name))?.bestW || 0) > 0;
 const kgFor = (w, name) => (w > 0 ? kg(w) : isWeighted(name) ? '?' : 'BW');
 const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
+// Test mode has its own in-progress workout, saved sessions and done marks, and never writes to the outbox.
+const testing = () => !!S.settings.testMode;
+const currentKey = () => (testing() ? 'test:current' : 'current');
+const doneMarks = () => (testing() ? S.testDone : S.done);
 const relDays = s => { const d = Math.round((parseDay(s) - parseDay(dayStr())) / 86400000); return d === 0 ? 'today' : d === 1 ? 'tomorrow' : d === -1 ? 'yesterday' : d < 0 ? `${-d} days ago` : `in ${d} days`; };
 
 let toastTimer;
@@ -60,7 +67,8 @@ function toast(msg, ms = 3500) {
 let saveTimer;
 function saveCurrent(now = false) {
   clearTimeout(saveTimer);
-  const go = () => (S.current ? kvSet('current', S.current) : kvDel('current'));
+  const k = currentKey();
+  const go = () => (S.current ? kvSet(k, S.current) : kvDel(k));
   if (now) return go();
   saveTimer = setTimeout(go, 300);
 }
@@ -83,6 +91,7 @@ function buildIndex() {
   };
   for (const h of S.data?.history || []) push(h[0], h[1], h[2], h[4], h[5], h[6], h[3]);
   for (const l of S.local) for (const s of l.sets) push(l.date, l.session, s.exercise, s.weight, s.reps, s.rir, s.set);
+  if (testing()) for (const l of S.testLocal) for (const s of l.sets) push(l.date, `${l.session} (test)`, s.exercise, s.weight, s.reps, s.rir, s.set);
   for (const e of idx.values()) {
     e.sessions.sort((a, b) => a.date.localeCompare(b.date));
     e.bestW = 0; e.bestE = 0; e.bestReps = 0; e.bestWDate = null;
@@ -113,7 +122,29 @@ function plannedGroups() {
     if (!groups.has(k)) groups.set(k, { key: k, date: r.date, session: r.session, rows: [] });
     groups.get(k).rows.push(r);
   }
-  return [...groups.values()].filter(g => !S.done[g.key]).sort((a, b) => a.date.localeCompare(b.date));
+  const list = [...groups.values()].filter(g => !doneMarks()[g.key]).sort((a, b) => a.date.localeCompare(b.date));
+  return testing() ? [practiceGroup(), ...list] : list;
+}
+
+/** Built-in session for test mode, so the whole flow can be tried even when nothing is planned. */
+function practiceGroup() {
+  const date = dayStr(), session = 'Practice session';
+  const row = (order, exercise, set, type, weight = null, reps = null, rir = null, rest = null, cue = '') =>
+    ({ date, session, order, exercise, set, type, weight, reps, rir, rest, cue });
+  const tip1 = 'Try it: put RIR 4 on set 1 (easier than the target 2) and watch set 2 get heavier';
+  const tip2 = 'Ticking a set starts the rest timer (30 s in practice)';
+  return { key: `${date}|${session}`, date, session, rows: [
+    row(0, 'Easy row or bike 3 min', null, 'warmup'),
+    row(0, 'Band pull-aparts 2x15', null, 'warmup'),
+    row(1, 'Trap-Bar Deadlift', 1, 'ramp', 60, 5, null, 30),
+    row(1, 'Trap-Bar Deadlift', 2, 'ramp', 80, 3, null, 30),
+    row(1, 'Trap-Bar Deadlift', 1, 'working', 100, 5, '2', 30, tip1),
+    row(1, 'Trap-Bar Deadlift', 2, 'working', 100, 5, '2', 30, tip1),
+    row(2, 'DB Bench Press', 1, 'working', 32, 8, '2', 30, tip2),
+    row(2, 'DB Bench Press', 2, 'working', 32, 8, '2', 30, tip2),
+    row(3, 'Nordic Hamstring Curl', 1, 'working', null, 4, null, 30),
+    row(3, 'Nordic Hamstring Curl', 2, 'working', null, 4, null, 30),
+  ] };
 }
 
 function mkSet(type, tw, tr, trir, rest) {
@@ -284,22 +315,29 @@ async function finishWorkout() {
     startedAt: w.startedAt, endedAt: new Date().toISOString(), durationMin: st.mins,
     sets, hamstring, prs: st.prs,
   };
-  await outboxPut(op);
-  S.local.push({ id: op.id, date: op.date, session: op.session, sets, savedAt: Date.now() });
-  await kvSet('local', S.local);
-  if (w.plannedKey) { S.done[w.plannedKey] = true; await kvSet('done', S.done); }
-  S.lastSummary = { session: w.session, ...st };
+  const saved = { id: op.id, date: op.date, session: op.session, sets, savedAt: Date.now() };
+  if (testing()) {
+    // phone only: no outbox entry, so nothing can reach the sheet
+    S.testLocal.push(saved); await kvSet('test:local', S.testLocal);
+    if (w.plannedKey) { S.testDone[w.plannedKey] = true; await kvSet('test:done', S.testDone); }
+  } else {
+    await outboxPut(op);
+    S.local.push(saved); await kvSet('local', S.local);
+    if (w.plannedKey) { S.done[w.plannedKey] = true; await kvSet('done', S.done); }
+  }
+  S.lastSummary = { session: w.session, test: testing(), ...st };
   S.current = null; await saveCurrent(true);
   stopRest(); releaseWakeLock();
   buildIndex(); await refreshPending();
   S.view = 'today'; render();
-  await syncAll();
+  if (!testing()) await syncAll();
   if (S.updatePending) location.reload();
 }
 
 async function skipPlanned(k) {
   const g = plannedGroups().find(x => x.key === k);
   if (!g || !confirm(`Mark "${g.session}" (${fmtDay(g.date)}) as done without logging it?`)) return;
+  if (testing()) { S.testDone[k] = true; await kvSet('test:done', S.testDone); render(); return; }
   await outboxPut({ id: uid(), type: 'skipPlanned', date: g.date, session: g.session });
   S.done[k] = true; await kvSet('done', S.done);
   await refreshPending(); render(); syncAll();
@@ -439,18 +477,23 @@ function renderStatus() {
   const online = navigator.onLine;
   const state = !S.settings.url ? 'offline' : S.syncing ? 'syncing' : S.lastError ? 'error' : S.pending ? 'pending' : online ? 'ok' : 'offline';
   const label = S.syncing ? 'Syncing…' : S.pending ? `${S.pending} to sync` : S.lastError ? 'Not synced' : S.lastSync ? `Synced ${ago(S.lastSync)}` : 'Not connected';
-  $('#top').innerHTML = `<h1>Gym Log</h1><button class="sync ${state}" data-act="sync">${!online ? 'Offline · ' : ''}${label}</button>`;
+  document.body.classList.toggle('testing', testing());
+  $('#top').innerHTML = `<h1>Gym Log${testing() ? ' <span class="testpill">TEST</span>' : ''}</h1><button class="sync ${state}" data-act="sync">${!online ? 'Offline · ' : ''}${label}</button>`;
 }
 
 function viewToday() {
   let h = '';
+  if (testing()) {
+    h += `<section class="card test"><h2>Test mode is on</h2><p>Workouts and "Mark done" stay on this phone and are never sent to your sheet. Real unsynced workouts are untouched.</p>
+      <div class="row"><button class="btn" data-act="test-off">Exit test mode</button></div></section>`;
+  }
   if (!S.settings.url || !S.settings.token) {
     h += `<section class="card warn"><h2>Connect your sheet</h2><p>Paste the setup code from Apps Script in <b>Settings</b> so workouts sync to your tracker. You can still log offline in the meantime.</p><button class="btn" data-act="nav" data-v="settings">Open Settings</button></section>`;
   }
   if (S.lastSummary) {
     const s = S.lastSummary;
     h += `<section class="card good"><h2>Saved: ${esc(s.session)}</h2><p>${s.sets} working sets · ${s.vol.toLocaleString()} kg · ${s.mins} min</p>
-      ${s.prs.length ? `<p>🏆 ${s.prs.map(esc).join('<br>🏆 ')}</p>` : ''}<p class="muted small">${S.pending ? 'Waiting for signal to sync – it is stored on the phone.' : 'Synced to your sheet.'}</p></section>`;
+      ${s.prs.length ? `<p>🏆 ${s.prs.map(esc).join('<br>🏆 ')}</p>` : ''}<p class="muted small">${s.test ? 'Test workout: kept on this phone only, not sent to your sheet.' : S.pending ? 'Waiting for signal to sync – it is stored on the phone.' : 'Synced to your sheet.'}</p></section>`;
   }
   if (S.current) {
     const st = workoutStats(S.current);
@@ -492,7 +535,7 @@ function hamstringCard(when) {
   return `<section class="card ham"><div class="row between"><h3>Hamstring ${when}</h3><span class="ham-val">${v ? `${v.pain}/10` : '–'}</span></div>
     <input type="range" min="0" max="10" step="0.5" value="${v ? v.pain : 0}" data-bind="ham:${when}">
     <div class="row"><button class="btn sm" data-act="ham-zero" data-w="${when}">0 – no pain</button>${v ? `<button class="btn sm ghost" data-act="ham-clear" data-w="${when}">Clear</button>` : ''}
-    <span class="muted small">Goes to the Physio Diary</span></div></section>`;
+    <span class="muted small">${testing() ? 'Test mode: not sent' : 'Goes to the Physio Diary'}</span></div></section>`;
 }
 
 function viewWorkout() {
@@ -552,7 +595,8 @@ function viewFinish() {
     ${st.prs.length ? `<p>🏆 ${st.prs.map(esc).join('<br>🏆 ')}</p>` : ''}
     ${st.open ? `<p class="warn-text">${st.open} working set${st.open > 1 ? 's are' : ' is'} not ticked and won't be saved.</p>` : ''}</section>`;
   if (S.settings.hamstring) h += hamstringCard('after');
-  h += `<button class="btn primary block" data-act="save">Save workout</button><button class="btn ghost block" data-act="nav" data-v="workout">Back to workout</button>`;
+  if (testing()) h += `<p class="muted small">Test mode: this stays on your phone and is not sent to your sheet.</p>`;
+  h += `<button class="btn primary block" data-act="save">${testing() ? 'Save test workout' : 'Save workout'}</button><button class="btn ghost block" data-act="nav" data-v="workout">Back to workout</button>`;
   return h;
 }
 
@@ -605,7 +649,11 @@ function viewSettings() {
   const st = S.settings;
   const tog = (k, label, help) => `<label class="tog"><input type="checkbox" data-setting="${k}" ${st[k] ? 'checked' : ''}><span><b>${label}</b><br><span class="muted small">${help}</span></span></label>`;
   const numIn = (k, label) => `<label class="field"><span>${label}</span><input type="number" inputmode="decimal" step="any" data-setting="${k}" value="${st[k]}"></label>`;
-  return `<section class="card"><h2>Google Sheet connection</h2>
+  const testCount = S.testLocal.length;
+  return `<section class="card ${testing() ? 'test' : ''}"><h2>Test mode</h2>
+      <label class="tog"><input type="checkbox" data-act="test-toggle" ${testing() ? 'checked' : ''}><span><b>Practise without saving to the sheet</b><br><span class="muted small">Adds a practice session. Test workouts stay on this phone, and your real data and unsynced workouts are kept separately.</span></span></label>
+      ${testCount ? `<div class="row"><span class="muted small">${testCount} test workout${testCount > 1 ? 's' : ''} saved</span><button class="btn sm ghost" data-act="clear-test">Clear test data</button></div>` : ''}</section>
+    <section class="card"><h2>Google Sheet connection</h2>
       <label class="field"><span>Setup code (paste from Apps Script)</span><textarea id="setup-code" rows="2" placeholder="GYMLOG:…"></textarea></label>
       <button class="btn" data-act="apply-code">Use setup code</button>
       <details ${st.url ? '' : 'open'}><summary class="muted small">Or enter manually</summary>
@@ -638,6 +686,15 @@ const actions = {
     S.current = workoutFromPlan(g); S.lastSummary = null; startWorkoutUi();
   },
   'skip-plan': d => skipPlanned(d.k),
+  'test-off': () => setTestMode(false),
+  'clear-test': async () => {
+    if (!confirm('Delete all test workouts from this phone? Your real data is not affected.')) return;
+    S.testLocal = []; S.testDone = {};
+    await kvDel('test:local'); await kvDel('test:done');
+    if (testing()) { S.current = null; await saveCurrent(true); stopRest(); }
+    else await kvDel('test:current');
+    buildIndex(); render(); toast('Test data cleared');
+  },
   'start-free': () => {
     const name = $('#free-name').value.trim() || 'Freestyle';
     S.current = newWorkout(name); S.lastSummary = null; startWorkoutUi();
@@ -696,6 +753,15 @@ const actions = {
   },
 };
 
+/** Switching modes reloads the app so every screen and store comes up in the new mode. */
+async function setTestMode(on) {
+  if (S.current && !confirm(`Your ${testing() ? 'test' : 'real'} workout in progress will be kept and come back when you switch back. Continue?`)) { render(); return; }
+  await saveCurrent(true);
+  S.settings.testMode = on; await kvSet('settings', S.settings);
+  stopRest();
+  location.reload();
+}
+
 function startWorkoutUi() {
   saveCurrent(true); S.view = 'workout'; render(); window.scrollTo(0, 0); requestWakeLock(); unlockAudio();
 }
@@ -710,6 +776,7 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => {
   const el = e.target;
   if (el.dataset.act === 'pick-ex') { S.progress.ex = el.value; render(); return; }
+  if (el.dataset.act === 'test-toggle') { setTestMode(el.checked); return; }
   if (el.dataset.setting) {
     const k = el.dataset.setting;
     S.settings[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (num(el.value) ?? DEFAULT_SETTINGS[k]) : el.value.trim();
@@ -766,7 +833,9 @@ setInterval(() => { if (S.pending && S.view !== 'workout') syncAll(); }, 5 * 600
 async function boot() {
   S.settings = { ...DEFAULT_SETTINGS, ...(await kvGet('settings') || {}) };
   S.data = await kvGet('data') || null;
-  S.current = await kvGet('current') || null;
+  S.current = await kvGet(currentKey()) || null;
+  S.testLocal = await kvGet('test:local') || [];
+  S.testDone = await kvGet('test:done') || {};
   S.local = await kvGet('local') || [];
   S.done = await kvGet('done') || {};
   S.lastSync = await kvGet('lastSync') || null;

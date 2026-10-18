@@ -170,3 +170,8 @@ details summary { margin: 10px 0 0; }
   background: #2a3040; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
   box-shadow: 0 8px 30px rgba(0, 0, 0, .45); font-size: 15px;
 }
+
+/* test mode */
+.testpill { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: #1a1200; background: var(--warn); border-radius: 6px; padding: 2px 6px; vertical-align: 2px; margin-left: 6px; }
+body.testing #top { border-bottom: 2px solid var(--warn); }
+.card.test { border-color: var(--warn); background: rgba(255, 181, 71, .08); }
