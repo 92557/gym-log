@@ -1,12 +1,13 @@
 // Offline shell. Bump VERSION whenever you change any app file so phones pick up the update.
-const VERSION = 'gym-log-v4';
+const VERSION = 'gym-log-v5';
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'db.js', 'rir.js', 'charts.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache so a new version never stores stale files
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {

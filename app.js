@@ -2,7 +2,7 @@ import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js
 import * as R from './rir.js';
 import { lineChart } from './charts.js';
 
-const VERSION = '1.0.0';
+const VERSION = '5';   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after check-in → Physio Diary
@@ -293,7 +293,8 @@ async function finishWorkout() {
   stopRest(); releaseWakeLock();
   buildIndex(); await refreshPending();
   S.view = 'today'; render();
-  syncAll();
+  await syncAll();
+  if (S.updatePending) location.reload();
 }
 
 async function skipPlanned(k) {
@@ -621,7 +622,8 @@ function viewSettings() {
       ${numIn('defaultRest', 'Default rest (s)')}${numIn('stepBarbell', 'Barbell increment (kg)')}${numIn('stepDumbbell', 'Dumbbell increment (kg)')}${numIn('stepOther', 'Machine/cable increment (kg)')}</section>
     <section class="card"><h2>Data</h2><p class="muted small">Everything is stored on this phone first and sent to the sheet when there is signal.</p>
       <button class="btn ghost" data-act="export">Export backup (JSON)</button>
-      <p class="muted small" id="persist"></p><p class="muted small">Gym Log v${VERSION}</p></section>`;
+      <p class="muted small" id="persist"></p>
+      <div class="row"><span class="muted small">Gym Log v${VERSION}</span><button class="btn sm ghost" data-act="check-update">Check for update</button></div></section>`;
 }
 
 // ───────────────────────────── events ─────────────────────────────
@@ -668,6 +670,14 @@ const actions = {
   discard: async () => { if (!confirm('Discard this workout? Nothing will be saved.')) return; S.current = null; await saveCurrent(true); stopRest(); releaseWakeLock(); S.view = 'today'; render(); },
   'rest-adj': d => { S.rest.end += +d.d * 1000; S.rest.total = Math.max(S.rest.total + +d.d, 1); S.rest.fired = false; kvSet('rest', S.rest); renderRest(); },
   'rest-stop': () => stopRest(),
+  'check-update': async () => {
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      await reg?.update();
+      if (reg?.installing || reg?.waiting) toast('Downloading the new version…');   // controllerchange reloads
+      else toast(`You're on the latest version (v${VERSION})`);
+    } catch { toast('Could not check for updates – are you offline?'); }
+  },
   range: d => { S.progress.range = +d.d; render(); },
   'apply-code': () => {
     const raw = $('#setup-code').value.trim().replace(/^GYMLOG:/, '');
@@ -737,7 +747,11 @@ document.addEventListener('keydown', e => {
 window.addEventListener('online', () => { renderStatus(); syncAll(); });
 window.addEventListener('offline', renderStatus);
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') { tickRest(); requestWakeLock(); if (S.view !== 'workout') syncAll(); }
+  if (document.visibilityState === 'visible') {
+    tickRest(); requestWakeLock(); if (S.view !== 'workout') syncAll();
+    // iPhones resume home-screen apps instead of relaunching them, so look for a new version here too
+    navigator.serviceWorker?.getRegistration().then(r => r?.update()).catch(() => { });
+  }
 });
 
 setInterval(() => {
@@ -772,8 +786,11 @@ async function boot() {
   if ('serviceWorker' in navigator) {
     const hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.register('sw.js').catch(() => { });
+    // A new version has taken over: switch to it now, unless a workout is open.
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (hadController) toast('App updated – close and reopen to use the new version', 6000);
+      if (!hadController) return;
+      if (S.current) { S.updatePending = true; toast('Update downloaded – it will load after this workout', 6000); }
+      else location.reload();
     });
   }
 }
