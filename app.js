@@ -5,7 +5,7 @@ import { lineChart, barChart } from './charts.js';
 const VERSION = '1.0.0';
 const DEFAULT_SETTINGS = {
   url: '', token: '',
-  hamstring: true,          // before/after check-in → Hamstring Diary
+  hamstring: true,          // before/after check-in → Physio Diary
   autoWarmups: true,        // add a ramp to heavy barbell lifts that have none planned
   autoAdjust: true,         // RIR engine changes the next sets' weight mid-session
   keepAwake: true,          // screen stays on during a workout
@@ -488,7 +488,7 @@ function hamstringCard(when) {
   return `<section class="card ham"><div class="row between"><h3>Hamstring ${when}</h3><span class="ham-val">${v ? `${v.pain}/10` : '–'}</span></div>
     <input type="range" min="0" max="10" step="0.5" value="${v ? v.pain : 0}" data-bind="ham:${when}">
     <div class="row"><button class="btn sm" data-act="ham-zero" data-w="${when}">0 – no pain</button>${v ? `<button class="btn sm ghost" data-act="ham-clear" data-w="${when}">Clear</button>` : ''}
-    <span class="muted small">Goes to the Hamstring Diary</span></div></section>`;
+    <span class="muted small">Goes to the Physio Diary</span></div></section>`;
 }
 
 function viewWorkout() {
@@ -641,7 +641,7 @@ function viewSettings() {
     <section class="card"><h2>Workout</h2>
       ${tog('autoAdjust', 'Auto-adjust weights by RIR', 'After each working set, re-target the remaining sets (max +5 % / −10 %).')}
       ${tog('autoWarmups', 'Automatic warm-up ramps', 'Adds bar → 50 → 70 → 85 % sets to heavy barbell lifts with no ramp planned.')}
-      ${tog('hamstring', 'Hamstring check-in', 'Before/after pain score, written to the Hamstring Diary.')}
+      ${tog('hamstring', 'Hamstring check-in', 'Before/after pain score, written to the Physio Diary.')}
       ${tog('keepAwake', 'Keep screen on', 'During a workout, so the rest timer stays visible.')}
       ${numIn('defaultRest', 'Default rest (s)')}${numIn('stepBarbell', 'Barbell increment (kg)')}${numIn('stepDumbbell', 'Dumbbell increment (kg)')}${numIn('stepOther', 'Machine/cable increment (kg)')}</section>
     <section class="card"><h2>Data</h2><p class="muted small">Everything is stored on this phone first and sent to the sheet when there is signal.</p>
