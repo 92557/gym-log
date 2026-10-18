@@ -1,11 +1,12 @@
 import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js';
 import * as R from './rir.js';
 import { lineChart } from './charts.js';
+import { muscleInfo, bodyMap, muscleList } from './muscles.js';
 
-const VERSION = '7';   // keep in step with the cache name in sw.js
+const VERSION = '8';   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
-  hamstring: true,          // before/after check-in → Physio Diary
+  hamstring: true,          // before/after body check-in → Physio Diary (setting name kept from v1)
   autoWarmups: true,        // add a ramp to heavy barbell lifts that have none planned
   autoAdjust: true,         // RIR engine changes the next sets' weight mid-session
   keepAwake: true,          // screen stays on during a workout
@@ -154,7 +155,7 @@ function mkSet(type, tw, tr, trir, rest) {
 
 function newWorkout(session, plannedKey = null) {
   return { id: uid(), session, plannedKey, date: dayStr(), startedAt: new Date().toISOString(),
-    hamstring: { before: null, after: null }, warmups: [], exercises: [] };
+    checks: { before: null, after: null }, warmups: [], exercises: [] };
 }
 
 function workoutFromPlan(g) {
@@ -308,12 +309,18 @@ async function finishWorkout() {
     }
   }
   const [pDate, pSession] = w.plannedKey ? w.plannedKey.split('|') : [];
-  const hamstring = ['before', 'after'].map(when => w.hamstring[when] && { when, ...w.hamstring[when] }).filter(Boolean);
+  const checks = ['before', 'after'].map(when => {
+    const c = w.checks?.[when];
+    if (!c || (!c.items.length && !c.note.trim())) return null;
+    return { when, time: c.time, note: c.note.trim(), items: c.items.map(i => ({ area: i.area, name: (i.name || '').trim(), score: i.score })) };
+  }).filter(Boolean);
+  // Older Apps Script versions only understand hamstring scores; newer ones use `checks` and ignore this.
+  const hamstring = checks.flatMap(c => c.items.filter(i => i.area === 'Hamstring').slice(0, 1).map(i => ({ when: c.when, pain: i.score, time: c.time })));
   const op = {
     id: w.id, type: 'session', date: w.date, session: w.session,
     planned: w.plannedKey ? { date: pDate, session: pSession } : null,
     startedAt: w.startedAt, endedAt: new Date().toISOString(), durationMin: st.mins,
-    sets, hamstring, prs: st.prs,
+    sets, checks, hamstring, prs: st.prs,
   };
   const saved = { id: op.id, date: op.date, session: op.session, sets, savedAt: Date.now() };
   if (testing()) {
@@ -530,18 +537,30 @@ function planSummary(g) {
     `<li><b>${esc(e.name)}</b> <span class="muted">${e.n}×${e.reps ?? '?'}${e.w ? ` @ ${kg(e.w)} kg` : ''}${e.rir ? ` · RIR ${esc(e.rir)}` : ''}</span></li>`).join('')}</ul>`;
 }
 
-function hamstringCard(when) {
-  const v = S.current.hamstring[when];
-  return `<section class="card ham"><div class="row between"><h3>Hamstring ${when}</h3><span class="ham-val">${v ? `${v.pain}/10` : '–'}</span></div>
-    <input type="range" min="0" max="10" step="0.5" value="${v ? v.pain : 0}" data-bind="ham:${when}">
-    <div class="row"><button class="btn sm" data-act="ham-zero" data-w="${when}">0 – no pain</button>${v ? `<button class="btn sm ghost" data-act="ham-clear" data-w="${when}">Clear</button>` : ''}
-    <span class="muted small">${testing() ? 'Test mode: not sent' : 'Goes to the Physio Diary'}</span></div></section>`;
+const CHECK_AREAS = ['Hamstring', 'Knee/quad', 'Lower back', 'Other'];
+
+/** Before/after check: score any area 0-10 and note anything else. Written to the Physio Diary. */
+function checkCard(when) {
+  const c = S.current.checks[when] || { items: [], note: '' };
+  const items = c.items.map((it, i) => `<div class="chk-item">
+      <div class="row between">${it.area === 'Other'
+        ? `<input class="chk-name" data-bind="chk:${when}:${i}:name" value="${esc(it.name || '')}" placeholder="Which area? e.g. left shin" autocomplete="off">`
+        : `<b>${esc(it.area)}</b>`}<span class="chk-val">${it.score}/10</span><button class="btn sm ghost" data-act="chk-rm" data-w="${when}" data-i="${i}" aria-label="Remove">✕</button></div>
+      <input type="range" min="0" max="10" step="0.5" value="${it.score}" data-bind="chk:${when}:${i}:score"></div>`).join('');
+  return `<section class="card chk"><h3>Body check – ${when}</h3>
+    <p class="muted small">Tap an area to score it (0 = fine). Add as many as you need.</p>
+    <div class="chips">${CHECK_AREAS.map(a => `<button class="chip-btn" data-act="chk-add" data-w="${when}" data-a="${a}">+ ${a}</button>`).join('')}</div>
+    ${items}
+    <textarea rows="2" data-bind="chknote:${when}" placeholder="Anything else? e.g. right knee stiff on stairs">${esc(c.note)}</textarea>
+    <p class="muted small">${testing() ? 'Test mode: not sent' : 'Saved to the Physio Diary'}</p></section>`;
 }
+
+const ensureCheck = when => (S.current.checks[when] ||= { items: [], note: '', time: hhmm() });
 
 function viewWorkout() {
   const w = S.current;
   let h = `<div class="wk-head"><div><h2>${esc(w.session)}</h2><span class="muted small" id="elapsed"></span></div><button class="btn primary" data-act="finish">Finish</button></div>`;
-  if (S.settings.hamstring) h += hamstringCard('before');
+  if (S.settings.hamstring) h += checkCard('before');
   if (w.warmups.length) {
     h += `<section class="card"><h3>Warm-up</h3>${w.warmups.map((x, i) => `<label class="check ${x.done ? 'done' : ''}"><input type="checkbox" data-act="warm" data-i="${i}" ${x.done ? 'checked' : ''}> ${esc(x.text)}</label>`).join('')}</section>`;
   }
@@ -558,6 +577,17 @@ function exerciseCard(ex, ei) {
   const allDone = ex.sets.length && ex.sets.every(s => s.done);
   let h = `<section class="card ex ${allDone ? 'complete' : ''}"><div class="row between"><h3>${esc(ex.name)}</h3><span class="muted small">±${step} kg</span></div>`;
   if (ex.cue) h += `<p class="cue">${esc(ex.cue)}</p>`;
+  const info = muscleInfo(ex.name);
+  if (info) {
+    h += `<button class="feel-toggle" data-act="feel" data-ex="${ei}" aria-expanded="${!!ex.showFeel}">${ex.showFeel ? '▾' : '▸'} Where to feel it</button>`;
+    if (ex.showFeel) {
+      const ml = muscleList(info.m);
+      h += `<div class="feel">${bodyMap(info.m)}
+        <div class="legend"><span class="key l3">Main</span><span class="key l2">Assisting</span><span class="key l1">Stabilising</span></div>
+        <p><b>Feel it:</b> ${esc(info.feel)}</p><p><b>Not here:</b> ${esc(info.not)}</p>
+        <p class="muted small">Main: ${ml.main.join(', ') || '–'}${ml.assist.length ? ` · Assisting: ${ml.assist.join(', ')}` : ''}${ml.stabilise.length ? ` · Stabilising: ${ml.stabilise.join(', ')}` : ''}</p></div>`;
+    }
+  }
   if (last) h += `<p class="last"><span>Last · ${fmtShort(last.date)}</span> ${esc(last.text)}</p>`;
   if (ex.hint && !ex.sets.some(s => s.type === 'working' && s.done)) {
     const first = ex.sets.find(s => s.type === 'working');
@@ -594,7 +624,11 @@ function viewFinish() {
   let h = `<section class="card"><h2>Finish ${esc(S.current.session)}?</h2><p>${st.sets} working sets · ${st.vol.toLocaleString()} kg volume · ${st.mins} min</p>
     ${st.prs.length ? `<p>🏆 ${st.prs.map(esc).join('<br>🏆 ')}</p>` : ''}
     ${st.open ? `<p class="warn-text">${st.open} working set${st.open > 1 ? 's are' : ' is'} not ticked and won't be saved.</p>` : ''}</section>`;
-  if (S.settings.hamstring) h += hamstringCard('after');
+  if (S.settings.hamstring) h += checkCard('after');
+  const otherAreas = ['before', 'after'].some(w => S.current.checks[w]?.items.some(i => i.area !== 'Hamstring'));
+  if (otherAreas && !testing() && S.data && !(S.data.api >= 2)) {
+    h += `<p class="warn-text small">Your Apps Script needs the latest Code.gs to save knee, back and other scores. Until then only hamstring scores reach the sheet.</p>`;
+  }
   if (testing()) h += `<p class="muted small">Test mode: this stays on your phone and is not sent to your sheet.</p>`;
   h += `<button class="btn primary block" data-act="save">${testing() ? 'Save test workout' : 'Save workout'}</button><button class="btn ghost block" data-act="nav" data-v="workout">Back to workout</button>`;
   return h;
@@ -665,7 +699,7 @@ function viewSettings() {
     <section class="card"><h2>Workout</h2>
       ${tog('autoAdjust', 'Auto-adjust weights by RIR', 'After each working set, re-target the remaining sets (max +5 % / −10 %).')}
       ${tog('autoWarmups', 'Automatic warm-up ramps', 'Adds bar → 50 → 70 → 85 % sets to heavy barbell lifts with no ramp planned.')}
-      ${tog('hamstring', 'Hamstring check-in', 'Before/after pain score, written to the Physio Diary.')}
+      ${tog('hamstring', 'Body check-in', 'Before/after scores for any area (hamstring, knee, back…) plus notes, written to the Physio Diary.')}
       ${tog('keepAwake', 'Keep screen on', 'During a workout, so the rest timer stays visible.')}
       ${numIn('defaultRest', 'Default rest (s)')}${numIn('stepBarbell', 'Barbell increment (kg)')}${numIn('stepDumbbell', 'Dumbbell increment (kg)')}${numIn('stepOther', 'Machine/cable increment (kg)')}</section>
     <section class="card"><h2>Data</h2><p class="muted small">Everything is stored on this phone first and sent to the sheet when there is signal.</p>
@@ -720,8 +754,13 @@ const actions = {
     if (!v) return;
     S.current.exercises.push(exerciseFromHistory(v)); saveCurrent(); render();
   },
-  'ham-zero': d => { S.current.hamstring[d.w] = { pain: 0, time: hhmm() }; saveCurrent(); render(); },
-  'ham-clear': d => { S.current.hamstring[d.w] = null; saveCurrent(); render(); },
+  'chk-add': d => {
+    const c = ensureCheck(d.w);
+    if (d.a !== 'Other' && c.items.some(i => i.area === d.a)) return toast(`${d.a} is already in this check`);
+    c.items.push({ area: d.a, name: '', score: 0 }); c.time = hhmm(); saveCurrent(); render();
+  },
+  'chk-rm': d => { S.current.checks[d.w].items.splice(+d.i, 1); saveCurrent(); render(); },
+  feel: d => { const ex = S.current.exercises[+d.ex]; ex.showFeel = !ex.showFeel; saveCurrent(); render(); },
   finish: () => { S.view = 'finish'; render(); window.scrollTo(0, 0); },
   save: () => finishWorkout(),
   discard: async () => { if (!confirm('Discard this workout? Nothing will be saved.')) return; S.current = null; await saveCurrent(true); stopRest(); releaseWakeLock(); S.view = 'today'; render(); },
@@ -795,10 +834,17 @@ document.addEventListener('input', e => {
     if (f === 'w') { s.touched = true; s.adj = null; }
   } else if (kind === 'note') {
     S.current.exercises[+a].note = e.target.value;
-  } else if (kind === 'ham') {
-    S.current.hamstring[a] = { pain: num(e.target.value), time: hhmm() };
-    const v = e.target.closest('.ham')?.querySelector('.ham-val');
-    if (v) v.textContent = `${e.target.value}/10`;
+  } else if (kind === 'chk') {
+    const check = ensureCheck(a), it = check.items[+c];
+    if (!it) return;
+    if (f === 'score') {
+      it.score = num(e.target.value) ?? 0;
+      const v = e.target.closest('.chk-item')?.querySelector('.chk-val');
+      if (v) v.textContent = `${it.score}/10`;
+    } else it.name = e.target.value;
+    check.time = hhmm();
+  } else if (kind === 'chknote') {
+    const ch = ensureCheck(a); ch.note = e.target.value; ch.time = hhmm();
   }
   saveCurrent();
 });
@@ -834,6 +880,12 @@ async function boot() {
   S.settings = { ...DEFAULT_SETTINGS, ...(await kvGet('settings') || {}) };
   S.data = await kvGet('data') || null;
   S.current = await kvGet(currentKey()) || null;
+  if (S.current && !S.current.checks) {   // started before v8: convert the hamstring-only check
+    const old = S.current.hamstring || {};
+    const conv = v => (v ? { items: [{ area: 'Hamstring', name: '', score: v.pain ?? 0 }], note: '', time: v.time || hhmm() } : null);
+    S.current.checks = { before: conv(old.before), after: conv(old.after) };
+    delete S.current.hamstring;
+  }
   S.testLocal = await kvGet('test:local') || [];
   S.testDone = await kvGet('test:done') || {};
   S.local = await kvGet('local') || [];

@@ -175,3 +175,23 @@ details summary { margin: 10px 0 0; }
 .testpill { font-size: 11px; font-weight: 800; letter-spacing: .08em; color: #1a1200; background: var(--warn); border-radius: 6px; padding: 2px 6px; vertical-align: 2px; margin-left: 6px; }
 body.testing #top { border-bottom: 2px solid var(--warn); }
 .card.test { border-color: var(--warn); background: rgba(255, 181, 71, .08); }
+
+/* body check */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chip-btn { border: 1px solid var(--line); background: var(--card-2); color: var(--text); border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 14px; font-weight: 600; }
+.chk-item { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.chk-item .row.between { gap: 8px; }
+.chk-item .row.between > b, .chk-name { flex: 1; }
+.chk-name { padding: 6px 8px; }
+.chk-val { font-weight: 700; color: var(--accent); min-width: 44px; text-align: right; }
+/* where to feel it */
+.feel-toggle { background: none; border: 0; color: var(--s2); font: inherit; font-size: 14px; font-weight: 600; padding: 4px 0; margin-bottom: 4px; }
+.feel { background: var(--card-2); border-radius: 12px; padding: 10px; margin: 2px 0 10px; }
+.feel p { font-size: 14px; margin: 6px 0; }
+.bodymap { display: block; width: 100%; max-width: 300px; margin: 0 auto; }
+.bodymap .sil > * { fill: #2f3542; stroke: #444c5c; stroke-width: .6; }
+.bodymap .mus { stroke: rgba(0, 0, 0, .35); stroke-width: .5; }
+.bodymap .l3, .key.l3::before { fill: #e5383b; background: #e5383b; }
+.bodymap .l2, .key.l2::before { fill: #f4796f; background: #f4796f; }
+.bodymap .l1, .key.l1::before { fill: #f9c0b8; background: #f9c0b8; }
+.bodymap .cap { fill: var(--muted); font-size: 7px; text-anchor: middle; }
