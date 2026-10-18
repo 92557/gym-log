@@ -188,10 +188,14 @@ body.testing #top { border-bottom: 2px solid var(--warn); }
 .feel-toggle { background: none; border: 0; color: var(--s2); font: inherit; font-size: 14px; font-weight: 600; padding: 4px 0; margin-bottom: 4px; }
 .feel { background: var(--card-2); border-radius: 12px; padding: 10px; margin: 2px 0 10px; }
 .feel p { font-size: 14px; margin: 6px 0; }
-.bodymap { display: block; width: 100%; max-width: 300px; margin: 0 auto; }
-.bodymap .sil > * { fill: #2f3542; stroke: #444c5c; stroke-width: .6; }
-.bodymap .mus { stroke: rgba(0, 0, 0, .35); stroke-width: .5; }
-.bodymap .l3, .key.l3::before { fill: #e5383b; background: #e5383b; }
-.bodymap .l2, .key.l2::before { fill: #f4796f; background: #f4796f; }
-.bodymap .l1, .key.l1::before { fill: #f9c0b8; background: #f9c0b8; }
-.bodymap .cap { fill: var(--muted); font-size: 7px; text-anchor: middle; }
+.bodymap { display: flex; gap: 8px; justify-content: center; max-width: 320px; margin: 0 auto; }
+.bodymap figure { margin: 0; flex: 1; text-align: center; }
+.bodymap figcaption { font-size: 11px; color: var(--muted); }
+.bodymap .fig { width: 100%; height: auto; display: block; }
+.bodymap .off { fill: #3b414e; }
+.bodymap .skin { fill: #4a505d; }
+.bodymap .hair { fill: #2a2e36; }
+.bodymap .outline { fill: none; stroke: #9aa1ad; stroke-width: 1.2; }
+.bodymap .l3, .key.l3::before { fill: #d93636; background: #d93636; }
+.bodymap .l2, .key.l2::before { fill: #ef7b70; background: #ef7b70; }
+.bodymap .l1, .key.l1::before { fill: #f7c3bb; background: #f7c3bb; }

@@ -3,7 +3,7 @@ import * as R from './rir.js';
 import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
 
-const VERSION = '8';   // keep in step with the cache name in sw.js
+const VERSION = '9';   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after body check-in → Physio Diary (setting name kept from v1)
@@ -705,7 +705,8 @@ function viewSettings() {
     <section class="card"><h2>Data</h2><p class="muted small">Everything is stored on this phone first and sent to the sheet when there is signal.</p>
       <button class="btn ghost" data-act="export">Export backup (JSON)</button>
       <p class="muted small" id="persist"></p>
-      <div class="row"><span class="muted small">Gym Log v${VERSION}</span><button class="btn sm ghost" data-act="check-update">Check for update</button></div></section>`;
+      <div class="row"><span class="muted small">Gym Log v${VERSION}</span><button class="btn sm ghost" data-act="check-update">Check for update</button></div>
+      <p class="muted small">Body diagrams: react-native-body-highlighter, MIT licence, © 2022 ELABBASSI Hicham.</p></section>`;
 }
 
 // ───────────────────────────── events ─────────────────────────────

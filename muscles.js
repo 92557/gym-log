@@ -1,3 +1,4 @@
+import { FRONT, BACK, OUTLINE_FRONT, OUTLINE_BACK } from './bodymap-data.js';
 // "Where to feel it" cues and a front/back body map with the working muscles shaded by how hard they work.
 // Levels: 3 = main mover (dark red), 2 = assisting (mid red), 1 = stabilising (light red).
 
@@ -206,56 +207,37 @@ export function muscleInfo(name) {
 }
 
 // ── body map ──
-// One figure is drawn in a 100 × 200 box; left-side shapes are mirrored to the right.
-const SIL = `
-  <circle cx="50" cy="14" r="9"/><rect x="46" y="21" width="8" height="7"/>
-  <path d="M29 30 Q50 25 71 30 L73 41 Q68 62 66 86 Q66 96 64 99 L36 99 Q34 96 34 86 Q32 62 27 41 Z"/>
-  <rect x="20" y="32" width="9" height="34" rx="4.5"/><rect x="71" y="32" width="9" height="34" rx="4.5"/>
-  <rect x="17" y="63" width="8" height="31" rx="4"/><rect x="75" y="63" width="8" height="31" rx="4"/>
-  <circle cx="20.5" cy="98" r="4"/><circle cx="79.5" cy="98" r="4"/>
-  <rect x="35" y="94" width="14" height="50" rx="6"/><rect x="51" y="94" width="14" height="50" rx="6"/>
-  <rect x="37" y="142" width="10" height="44" rx="5"/><rect x="53" y="142" width="10" height="44" rx="5"/>
-  <ellipse cx="42" cy="189" rx="6" ry="3"/><ellipse cx="58" cy="189" rx="6" ry="3"/>`;
+// Realistic front/back figure (react-native-body-highlighter, MIT – see bodymap-data.js).
+// Our muscle groups are mapped onto its regions; a region takes the highest level of the groups it covers.
 
-// [muscle, shape, mirrored?]  shape: ['e', cx, cy, rx, ry] or ['r', x, y, w, h, r]
-const FRONT = [
-  ['delts_side', ['e', 25.5, 37, 3, 5], true], ['delts_front', ['e', 30.5, 36.5, 5, 5.5], true],
-  ['chest', ['e', 41, 44, 8.5, 6], true], ['biceps', ['e', 24.5, 50, 3.6, 10], true],
-  ['forearms', ['e', 21, 76, 3.4, 10], true], ['abs', ['r', 44.5, 52, 11, 30, 3], false],
-  ['obliques', ['e', 36.5, 68, 3.5, 11], true], ['hipFlexors', ['e', 42, 92, 4, 3.5], true],
-  ['quads', ['e', 41, 116, 6.5, 19], true], ['adductors', ['e', 47.2, 108, 2.4, 10], true],
-];
-const BACK = [
-  ['traps', ['e', 50, 34, 13, 5], false], ['delts_side', ['e', 25.5, 37, 3, 5], true],
-  ['delts_rear', ['e', 30.5, 37, 5, 5.5], true], ['midBack', ['e', 50, 47, 8, 7], false],
-  ['lats', ['e', 37, 56, 6, 12], true], ['triceps', ['e', 24.5, 50, 3.6, 10], true],
-  ['forearms', ['e', 21, 76, 3.4, 10], true], ['lowerBack', ['r', 45, 64, 10, 22, 3], false],
-  ['obliques', ['e', 35, 74, 2.5, 8], true], ['glutes', ['e', 43, 100, 7.5, 8], true],
-  ['hamstrings', ['e', 42, 124, 6, 17], true], ['adductors', ['e', 48.6, 112, 1.6, 8], true],
-  ['calves', ['e', 42, 158, 5, 12], true],
-];
-
-const shape = (s, mirror) => {
-  if (s[0] === 'e') { const cx = mirror ? 100 - s[1] : s[1]; return `<ellipse cx="${cx}" cy="${s[2]}" rx="${s[3]}" ry="${s[4]}"`; }
-  const x = mirror ? 100 - s[1] - s[3] : s[1];
-  return `<rect x="${x}" y="${s[2]}" width="${s[3]}" height="${s[4]}" rx="${s[5]}"`;
+const REGIONS = {
+  chest: ['chest'], biceps: ['biceps'], triceps: ['triceps'], forearm: ['forearms'], abs: ['abs'], obliques: ['obliques'],
+  quadriceps: ['quads'], adductors: ['adductors'], trapezius: ['traps'], 'upper-back': ['midBack', 'lats'],
+  'lower-back': ['lowerBack'], gluteal: ['glutes'], hamstring: ['hamstrings'], calves: ['calves'],
 };
+const DELTOIDS = { front: ['delts_front', 'delts_side'], back: ['delts_rear', 'delts_side'] };
+const SKIN = new Set(['head', 'hands', 'feet', 'ankles', 'knees', 'neck', 'tibialis']);
 
-function figure(parts, levels, dx, label) {
-  let g = `<g transform="translate(${dx} 0)"><g class="sil">${SIL}</g>`;
-  for (const [muscle, s, mirrored] of parts) {
-    const lv = levels[muscle];
-    if (!lv) continue;
-    const t = `<title>${NAMES[muscle]}</title>`;
-    g += `${shape(s, false)} class="mus l${lv}">${t}</${s[0] === 'e' ? 'ellipse' : 'rect'}>`;
-    if (mirrored) g += `${shape(s, true)} class="mus l${lv}">${t}</${s[0] === 'e' ? 'ellipse' : 'rect'}>`;
+function figure(side, levels) {
+  const parts = side === 'front' ? FRONT : BACK;
+  const level = slug => {
+    const groups = slug === 'deltoids' ? DELTOIDS[side] : REGIONS[slug] || [];
+    return Math.max(0, ...groups.map(g => levels[g] || 0));
+  };
+  let g = '';
+  for (const [slug, paths] of Object.entries(parts)) {
+    const lv = SKIN.has(slug) || slug === 'hair' ? 0 : level(slug);
+    const cls = slug === 'hair' ? 'hair' : SKIN.has(slug) ? 'skin' : lv ? `mus l${lv}` : 'off';
+    for (const d of paths) g += `<path d="${d}" class="${cls}"/>`;
   }
-  return g + `<text x="50" y="199" class="cap">${label}</text></g>`;
+  const vb = side === 'front' ? '0 0 724 1448' : '724 0 724 1448';
+  return `<svg viewBox="${vb}" class="fig" role="img" aria-label="${side === 'front' ? 'Front' : 'Back'}">${g}
+    <path d="${side === 'front' ? OUTLINE_FRONT : OUTLINE_BACK}" class="outline" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
 export function bodyMap(levels) {
-  return `<svg class="bodymap" viewBox="0 0 210 202" role="img" aria-label="Muscles worked">
-    ${figure(FRONT, levels, 0, 'Front')}${figure(BACK, levels, 110, 'Back')}</svg>`;
+  return `<div class="bodymap"><figure>${figure('front', levels)}<figcaption>Front</figcaption></figure>
+    <figure>${figure('back', levels)}<figcaption>Back</figcaption></figure></div>`;
 }
 
 /** Muscle names grouped by level, strongest first, for the text under the diagram. */
