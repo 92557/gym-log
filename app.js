@@ -2,7 +2,7 @@ import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js
 import * as R from './rir.js';
 import { lineChart } from './charts.js';
 
-const VERSION = '5';   // keep in step with the cache name in sw.js
+const VERSION = '6';   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after check-in → Physio Diary
