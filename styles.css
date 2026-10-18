@@ -154,8 +154,8 @@ details summary { margin: 10px 0 0; }
 .chart .line { fill: none; stroke-width: 2; stroke-linejoin: round; }
 .chart .line.s1 { stroke: var(--accent); }
 .chart .line.s2 { stroke: var(--s2); }
-.chart .dot.s1, .chart .bar.s1 { fill: var(--accent); }
-.chart .dot.s2, .chart .bar.s2 { fill: var(--s2); }
+.chart .dot.s1 { fill: var(--accent); }
+.chart .dot.s2 { fill: var(--s2); }
 .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 4px; }
 .key::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 .key.s1::before { background: var(--accent); }

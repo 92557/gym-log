@@ -1,6 +1,6 @@
 import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js';
 import * as R from './rir.js';
-import { lineChart, barChart } from './charts.js';
+import { lineChart } from './charts.js';
 
 const VERSION = '1.0.0';
 const DEFAULT_SETTINGS = {
@@ -423,10 +423,10 @@ async function syncAll({ quiet = true } = {}) {
 
 function render() {
   renderStatus();
-  const tabs = [['today', 'Today'], ...(S.current ? [['workout', 'Workout']] : []), ['progress', 'Progress'], ['cardio', 'Cardio'], ['settings', 'Settings']];
+  const tabs = [['today', 'Today'], ...(S.current ? [['workout', 'Workout']] : []), ['progress', 'Progress'], ['settings', 'Settings']];
   if (S.view === 'workout' && !S.current) S.view = 'today';
   $('#tabs').innerHTML = tabs.map(([v, l]) => `<button data-act="nav" data-v="${v}" class="${S.view === v || (v === 'workout' && S.view === 'finish') ? 'on' : ''}">${l}</button>`).join('');
-  const views = { today: viewToday, workout: viewWorkout, finish: viewFinish, progress: viewProgress, cardio: viewCardio, settings: viewSettings };
+  const views = { today: viewToday, workout: viewWorkout, finish: viewFinish, progress: viewProgress, settings: viewSettings };
   $('#view').innerHTML = (views[S.view] || viewToday)();
   renderRest();
 }
@@ -595,34 +595,6 @@ function recentPrs() {
     }
   }
   return ev.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 12);
-}
-
-function viewCardio() {
-  const acts = S.data?.activities || [];
-  if (!acts.length) {
-    return `<section class="card"><h2>Runs & rides from Strava</h2><p class="muted">Once Strava is connected in Apps Script (see SETUP.md, step 5), your Garmin activities appear here and in the <b>Activities</b> and <b>Cardio Weekly</b> tabs of your sheet. Record lifting sessions on your watch as “Strength” to get heart rate linked to the workout.</p></section>`;
-  }
-  const monday = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
-  const weeks = [];
-  const thisMon = monday(new Date());
-  for (let i = 11; i >= 0; i--) { const d = new Date(thisMon); d.setDate(d.getDate() - 7 * i); weeks.push(dayStr(d)); }
-  const run = weeks.map(() => 0), ride = weeks.map(() => 0);
-  const isRun = t => /Run/.test(t), isRide = t => /Ride/.test(t);
-  for (const a of acts) {
-    const i = weeks.indexOf(dayStr(monday(parseDay(a.date))));
-    if (i < 0) continue;
-    if (isRun(a.type)) run[i] += a.km || 0;
-    if (isRide(a.type)) ride[i] += a.km || 0;
-  }
-  const r1 = v => Math.round(v * 10) / 10;
-  let h = `<section class="card"><h3>Weekly distance (km)</h3>${barChart(weeks.map(fmtShort), [{ name: 'Run', cls: 's1', values: run.map(r1) }, { name: 'Ride', cls: 's2', values: ride.map(r1) }], { unit: ' km' })}
-    <div class="stats"><div><b>${r1(run[11])} km</b><span>run this week</span></div><div><b>${r1(ride[11])} km</b><span>ride this week</span></div></div></section>`;
-  h += `<section class="card"><h3>Recent activities</h3>${acts.slice(-20).reverse().map(a => {
-    const pace = isRun(a.type) && a.km ? `${mmss(Math.round(a.movingMin * 60 / a.km))}/km` : a.km && a.movingMin ? `${r1(a.km / (a.movingMin / 60))} km/h` : '';
-    return `<div class="li col"><span><b>${esc(a.name)}</b> <span class="muted small">${esc(a.type)}</span></span>
-      <span class="muted small">${fmtDay(a.date)} · ${a.km ? r1(a.km) + ' km · ' : ''}${Math.round(a.movingMin || 0)} min${pace ? ' · ' + pace : ''}${a.avgHr ? ` · ♥ ${a.avgHr}/${a.maxHr || '–'}` : ''}${a.linked ? ` · linked to ${esc(a.linked)}` : ''}</span></div>`;
-  }).join('')}</section>`;
-  return h;
 }
 
 function viewSettings() {

@@ -1,5 +1,5 @@
 // Offline shell. Bump VERSION whenever you change any app file so phones pick up the update.
-const VERSION = 'gym-log-v2';
+const VERSION = 'gym-log-v3';
 const SHELL = [
   './', 'index.html', 'styles.css', 'app.js', 'db.js', 'rir.js', 'charts.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',

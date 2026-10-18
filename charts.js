@@ -41,26 +41,3 @@ export function lineChart(series, { unit = '' } = {}) {
   const legend = series.map(s => `<span class="key ${s.cls}">${s.name}</span>`).join('');
   return svg + `<div class="legend">${legend}</div>`;
 }
-
-/** labels: string[], series: [{ name, cls, values: number[] }] – grouped bars */
-export function barChart(labels, series, { unit = '' } = {}) {
-  const max = Math.max(0, ...series.flatMap(s => s.values));
-  if (!max) return '<p class="muted small">Nothing recorded in this period.</p>';
-  const { hi, ticks } = niceTicks(0, max);
-  const n = labels.length, g = (W - PAD.l - PAD.r) / n, bw = Math.max(2, (g - 4) / series.length);
-  const sy = y => H - PAD.b - y / hi * (H - PAD.t - PAD.b);
-  let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
-  for (const t of ticks) {
-    svg += `<line class="grid" x1="${PAD.l}" x2="${W - PAD.r}" y1="${sy(t)}" y2="${sy(t)}"/>`;
-    svg += `<text class="axis" x="${PAD.l - 4}" y="${sy(t) + 3}" text-anchor="end">${t}</text>`;
-  }
-  labels.forEach((lab, i) => {
-    series.forEach((s, j) => {
-      const v = s.values[i] || 0, x = PAD.l + i * g + 2 + j * bw;
-      if (v > 0) svg += `<rect class="bar ${s.cls}" x="${x.toFixed(1)}" y="${sy(v).toFixed(1)}" width="${(bw - 1).toFixed(1)}" height="${(sy(0) - sy(v)).toFixed(1)}" rx="1.5"><title>${lab} · ${s.name}: ${v}${unit}</title></rect>`;
-    });
-    if (i % Math.ceil(n / 6) === 0) svg += `<text class="axis" x="${(PAD.l + i * g + g / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${lab}</text>`;
-  });
-  svg += '</svg>';
-  return svg + `<div class="legend">${series.map(s => `<span class="key ${s.cls}">${s.name}</span>`).join('')}</div>`;
-}
