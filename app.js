@@ -43,6 +43,9 @@ const hhmm = (d = new Date()) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const mmss = sec => `${Math.floor(sec / 60)}:${pad(Math.max(0, sec) % 60)}`;
 const num = v => { if (v === '' || v === null || v === undefined) return null; const n = Number(String(v).replace(',', '.')); return isFinite(n) ? n : null; };
 const kg = w => (w > 0 ? `${+w.toFixed(2)}` : 'BW');
+// A blank weight on a normally weighted lift means "not recorded", not bodyweight.
+const isWeighted = name => (S.index.get(key(name))?.bestW || 0) > 0;
+const kgFor = (w, name) => (w > 0 ? kg(w) : isWeighted(name) ? '?' : 'BW');
 const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`; };
 const relDays = s => { const d = Math.round((parseDay(s) - parseDay(dayStr())) / 86400000); return d === 0 ? 'today' : d === 1 ? 'tomorrow' : d === -1 ? 'yesterday' : d < 0 ? `${-d} days ago` : `in ${d} days`; };
 
@@ -173,7 +176,7 @@ function lastTime(name) {
   const h = S.index.get(key(name));
   const s = h?.sessions[h.sessions.length - 1];
   if (!s) return null;
-  return { date: s.date, text: s.sets.map(x => `${kg(x.w)}×${x.r || '?'}${x.rir !== null ? ` @${x.rir}` : ''}`).join(' · ') };
+  return { date: s.date, text: s.sets.map(x => `${kgFor(x.w, name)}×${x.r || '?'}${x.rir !== null ? ` @${x.rir}` : ''}`).join(' · ') };
 }
 
 function exerciseFromHistory(name) {
@@ -267,7 +270,7 @@ async function finishWorkout() {
       if (s.type !== 'working' || !s.done) continue;
       n++;
       const notes = [];
-      if (n === 1 && !(s.w > 0)) notes.push('BW');
+      if (n === 1 && !(s.w > 0) && !isWeighted(ex.name)) notes.push('BW');
       if (n === 1 && ex.note) notes.push(ex.note);
       if (s.pr) notes.push(s.pr);
       sets.push({ exercise: ex.name, set: n, weight: s.w > 0 ? s.w : null, reps: s.r, rir: s.rir, notes: notes.join('; ') });
@@ -527,7 +530,7 @@ function exerciseCard(ex, ei) {
     } else {
       const b = f => `data-bind="set:${ei}:${si}:${f}"`;
       h += `<div class="${cls}"><span class="lbl">${lbl}</span>
-        <input type="number" inputmode="decimal" step="any" ${b('w')} value="${s.w ?? ''}" placeholder="BW">
+        <input type="number" inputmode="decimal" step="any" ${b('w')} value="${s.w ?? ''}" placeholder="${isWeighted(ex.name) ? 'kg' : 'BW'}">
         <input type="number" inputmode="numeric" ${b('r')} value="${s.r ?? ''}" placeholder="${s.tr ?? ''}">
         <input type="number" inputmode="decimal" step="0.5" ${b('rir')} value="${s.rir ?? ''}" placeholder="${s.trir !== null ? '@' + s.trir : '–'}">
         <button class="tick" data-act="tick" data-ex="${ei}" data-s="${si}" aria-label="Done">${s.done ? '✓' : ''}</button></div>`;
@@ -580,7 +583,7 @@ function viewProgress() {
     ${lineChart(series, { unit: weighted ? ' kg' : '' })}
     <div class="stats">${weighted ? `<div><b>${kg(sel.bestW)} kg</b><span>heaviest${sel.bestWDate ? ' · ' + fmtShort(sel.bestWDate) : ''}</span></div><div><b>${Math.round(sel.bestE)} kg</b><span>best est. 1RM</span></div>` : `<div><b>${sel.bestReps}</b><span>best reps</span></div>`}
     <div><b>${sel.sessions.length}</b><span>sessions</span></div></div></section>`;
-  h += `<section class="card"><h3>Recent sessions</h3>${sel.sessions.slice(-8).reverse().map(s => `<div class="li col"><span class="muted small">${fmtDay(s.date)} · ${esc(s.session)}</span><span>${s.sets.map(x => `${kg(x.w)}×${x.r || '?'}${x.rir !== null ? ' @' + x.rir : ''}`).join(' · ')}</span></div>`).join('')}</section>`;
+  h += `<section class="card"><h3>Recent sessions</h3>${sel.sessions.slice(-8).reverse().map(s => `<div class="li col"><span class="muted small">${fmtDay(s.date)} · ${esc(s.session)}</span><span>${s.sets.map(x => `${kgFor(x.w, sel.name)}×${x.r || '?'}${x.rir !== null ? ' @' + x.rir : ''}`).join(' · ')}</span></div>`).join('')}</section>`;
   h += `<section class="card"><h3>Recent PRs (heaviest weight)</h3>${recentPrs().map(p => `<div class="li"><span>${esc(p.name)}</span><span><b>${kg(p.w)} kg</b> <span class="muted small">${fmtShort(p.date)}</span></span></div>`).join('') || '<p class="muted small">None yet.</p>'}</section>`;
   return h;
 }
