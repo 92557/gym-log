@@ -47,7 +47,7 @@ const AREA_RULES = [
 const FINE = /\b(fine|ok|okay|good|no pain|unnoticeable|felt good)\b/;
 // A score is "n/10" or "n-m/10"; a bare number only counts if it isn't a duration, distance or weight.
 const SCORE = /(\d+(?:\.\d+)?)(?:\s*[-–]\s*(\d+(?:\.\d+)?))?\s*\/\s*(?:10|20)\b/g;
-const BARE = /(?<![\d.:])(\d+(?:\.\d+)?)(?![\d.:]|\s*(?:min|mins|minutes|km|k\b|hr|hrs|hour|hours|kg|x|times|m\b|sec|s\b|am|pm|%))/g;
+const BARE = /(?<![\d.:])(\d+(?:\.\d)?)(?![\d.:]|\s*(?:min|mins|minutes|km|k\b|hr|hrs|hour|hours|kg|x|times|m\b|sec|s\b|am|pm|%))/g;
 
 function findScores(clause) {
   const out = [];
@@ -62,16 +62,35 @@ function findScores(clause) {
   return out.filter(s => s.v >= 0 && s.v <= 10);
 }
 
+const clock = (h, m, ampm) => {
+  let hh = +h;
+  if (ampm) { if (hh < 1 || hh > 12) return null; hh = (hh % 12) + (ampm === 'pm' ? 12 : 0); }
+  return hh < 24 && +m < 60 ? `${String(hh).padStart(2, '0')}:${m}` : null;
+};
+// Times written anywhere in a note: 18:30, 8.30, 0830, 7pm, 8:30am. Not scores ("2.50/10"),
+// distances ("1500m", "30km") or durations ("40 mins").
+const TIME_ANYWHERE = [
+  /(?<![\d/.:])(\d{1,2})[:.](\d{2})(?!\d|\s*\/)\s*(am|pm)?\b/,
+  /(?<![\d/.:])(\d{1,2})\s*(am|pm)\b/,
+  /(?<![\d/.:])(\d{4})(?![\d.:]|\s*(?:m\b|km|k\b|kg|metres|meters|mins?|minutes|s\b|\/))/,
+];
+
 function parseTime(text) {
-  const t = text.trim().toLowerCase();
-  let m = t.match(/^\[?(\d{1,2})[:.]?(\d{2})\]?\b/);
-  if (m && +m[1] < 24 && +m[2] < 60) return { time: `${m[1].padStart(2, '0')}:${m[2]}`, rest: text.trim().slice(m[0].length).trim() };
-  m = t.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/);
-  if (m && +m[1] <= 12) {
-    const h = (+m[1] % 12) + (m[3] === 'pm' ? 12 : 0);
-    return { time: `${String(h).padStart(2, '0')}:${m[2] || '00'}`, rest: text.trim().slice(m[0].length).trim() };
-  }
-  return { time: null, rest: text.trim() };
+  const raw = text.trim(), t = raw.toLowerCase();
+  // A time at the start is taken out of the note ("0830 woke up" → note "woke up").
+  let m = t.match(/^\[?(\d{1,2})[:.]?(\d{2})\]?\s*(am|pm)?(?=\s|$|[,;\]])/);
+  if (m) { const c = clock(m[1], m[2], m[3]); if (c) return { time: c, rest: raw.slice(m[0].length).replace(/^[\s\]]+/, '') }; }
+  m = t.match(/^(\d{1,2})\s*(am|pm)\b/);
+  if (m) { const c = clock(m[1], '00', m[2]); if (c) return { time: c, rest: raw.slice(m[0].length).trim() }; }
+  // Elsewhere in the text it stays in the note ("Woke up 0830 legs ok"); the earliest valid time wins.
+  const [hm, hOnly, fourDigits] = TIME_ANYWHERE.map(re => t.match(re));
+  const found = [
+    hm && { at: hm.index, time: clock(hm[1], hm[2], hm[3]) },
+    hOnly && { at: hOnly.index, time: clock(hOnly[1], '00', hOnly[2]) },
+    fourDigits && { at: fourDigits.index, time: clock(fourDigits[1].slice(0, 2), fourDigits[1].slice(2)) },
+  ].filter(f => f && f.time).sort((a, b) => a.at - b.at);
+  if (found.length) return { time: found[0].time, rest: raw };
+  return { time: null, rest: raw };
 }
 
 /** Best guess at the entry; everything it returns is shown for the user to confirm or change. */
