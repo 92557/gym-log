@@ -2,8 +2,9 @@ import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js
 import * as R from './rir.js';
 import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
+import { ACTIVITIES, AREAS, parseLog } from './physio.js';
 
-const VERSION = '9';   // keep in step with the cache name in sw.js
+const VERSION = '10';   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after body check-in → Physio Diary (setting name kept from v1)
@@ -23,6 +24,8 @@ const S = {
   done: {},                 // planned-session keys finished/skipped locally
   testLocal: [],            // test-mode sessions: phone only, never queued for the sheet
   testDone: {},             // test-mode "done" marks, kept apart from the real ones
+  testPhysio: [],           // test-mode physio log entries (phone only)
+  plog: null,               // physio log entry being written
   pending: 0,
   syncing: false, lastSync: null, lastError: null,
   view: 'today',
@@ -475,7 +478,7 @@ function render() {
   const tabs = [['today', 'Today'], ...(S.current ? [['workout', 'Workout']] : []), ['progress', 'Progress'], ['settings', 'Settings']];
   if (S.view === 'workout' && !S.current) S.view = 'today';
   $('#tabs').innerHTML = tabs.map(([v, l]) => `<button data-act="nav" data-v="${v}" class="${S.view === v || (v === 'workout' && S.view === 'finish') ? 'on' : ''}">${l}</button>`).join('');
-  const views = { today: viewToday, workout: viewWorkout, finish: viewFinish, progress: viewProgress, settings: viewSettings };
+  const views = { today: viewToday, workout: viewWorkout, finish: viewFinish, progress: viewProgress, settings: viewSettings, log: viewLog };
   $('#view').innerHTML = (views[S.view] || viewToday)();
   renderRest();
 }
@@ -494,6 +497,7 @@ function viewToday() {
     h += `<section class="card test"><h2>Test mode is on</h2><p>Workouts and "Mark done" stay on this phone and are never sent to your sheet. Real unsynced workouts are untouched.</p>
       <div class="row"><button class="btn" data-act="test-off">Exit test mode</button></div></section>`;
   }
+  h += `<section class="card"><div class="row between"><h3>Physio log</h3><button class="btn primary sm" data-act="plog-open">+ Log how you feel</button></div></section>`;
   if (!S.settings.url || !S.settings.token) {
     h += `<section class="card warn"><h2>Connect your sheet</h2><p>Paste the setup code from Apps Script in <b>Settings</b> so workouts sync to your tracker. You can still log offline in the meantime.</p><button class="btn" data-act="nav" data-v="settings">Open Settings</button></section>`;
   }
@@ -683,10 +687,10 @@ function viewSettings() {
   const st = S.settings;
   const tog = (k, label, help) => `<label class="tog"><input type="checkbox" data-setting="${k}" ${st[k] ? 'checked' : ''}><span><b>${label}</b><br><span class="muted small">${help}</span></span></label>`;
   const numIn = (k, label) => `<label class="field"><span>${label}</span><input type="number" inputmode="decimal" step="any" data-setting="${k}" value="${st[k]}"></label>`;
-  const testCount = S.testLocal.length;
+  const testCount = S.testLocal.length + S.testPhysio.length;
   return `<section class="card ${testing() ? 'test' : ''}"><h2>Test mode</h2>
       <label class="tog"><input type="checkbox" data-act="test-toggle" ${testing() ? 'checked' : ''}><span><b>Practise without saving to the sheet</b><br><span class="muted small">Adds a practice session. Test workouts stay on this phone, and your real data and unsynced workouts are kept separately.</span></span></label>
-      ${testCount ? `<div class="row"><span class="muted small">${testCount} test workout${testCount > 1 ? 's' : ''} saved</span><button class="btn sm ghost" data-act="clear-test">Clear test data</button></div>` : ''}</section>
+      ${testCount ? `<div class="row"><span class="muted small">${testCount} test entr${testCount > 1 ? 'ies' : 'y'} saved</span><button class="btn sm ghost" data-act="clear-test">Clear test data</button></div>` : ''}</section>
     <section class="card"><h2>Google Sheet connection</h2>
       <label class="field"><span>Setup code (paste from Apps Script)</span><textarea id="setup-code" rows="2" placeholder="GYMLOG:…"></textarea></label>
       <button class="btn" data-act="apply-code">Use setup code</button>
@@ -724,8 +728,8 @@ const actions = {
   'test-off': () => setTestMode(false),
   'clear-test': async () => {
     if (!confirm('Delete all test workouts from this phone? Your real data is not affected.')) return;
-    S.testLocal = []; S.testDone = {};
-    await kvDel('test:local'); await kvDel('test:done');
+    S.testLocal = []; S.testDone = {}; S.testPhysio = [];
+    await kvDel('test:local'); await kvDel('test:done'); await kvDel('test:physio');
     if (testing()) { S.current = null; await saveCurrent(true); stopRest(); }
     else await kvDel('test:current');
     buildIndex(); render(); toast('Test data cleared');
@@ -875,6 +879,132 @@ setInterval(() => {
 }, 500);
 setInterval(() => { if (S.pending && S.view !== 'workout') syncAll(); }, 5 * 60000);
 
+// ───────────────────────────── physio log ─────────────────────────────
+// Type or dictate an entry the way you would in Notes; the parsed time, activity and scores fill the form below,
+// where anything can be corrected. Saved entries queue like workouts and become Physio Diary rows.
+
+function newLogDraft() {
+  return { date: dayStr(), time: hhmm(), text: '', activity: 'General / other', items: [], touched: {}, manual: {} };
+}
+
+let draftTimer;
+function saveDraft() {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => (S.plog ? kvSet('physioDraft', S.plog) : kvDel('physioDraft')), 300);
+}
+
+function logForm() {
+  const d = S.plog;
+  const items = d.items.map((it, i) => `<div class="chk-item">
+      <div class="row between">${it.area === 'Other'
+        ? `<input class="chk-name" data-plog="item:${i}:name" value="${esc(it.name || '')}" placeholder="Which area? e.g. left shin" autocomplete="off">`
+        : `<b>${esc(it.area)}</b>`}<span class="chk-val">${it.score}/10</span><button class="btn sm ghost" data-act="plog-rm" data-i="${i}" aria-label="Remove">✕</button></div>
+      <input type="range" min="0" max="10" step="0.5" value="${it.score}" data-plog="item:${i}:score"></div>`).join('');
+  const waiting = !testing() && S.data && !(S.data.api >= 3);
+  return `<section class="card"><h3>When</h3><div class="row">
+      <input type="date" data-plog="date" value="${esc(d.date)}"><input type="time" data-plog="time" value="${esc(d.time)}"></div></section>
+    <section class="card"><h3>What were you doing?</h3><div class="chips">${ACTIVITIES.map(a =>
+      `<button class="chip-btn ${d.activity === a.name ? 'on' : ''}" data-act="plog-act" data-a="${esc(a.name)}">${esc(a.short)}</button>`).join('')}</div></section>
+    <section class="card"><h3>How does it feel?</h3><p class="muted small">Tap an area to score it (0 = fine).</p>
+      <div class="chips">${AREAS.map(a => `<button class="chip-btn" data-act="plog-add" data-a="${a}">+ ${a}</button>`).join('')}</div>${items}</section>
+    ${waiting ? `<p class="warn-text small">Your Apps Script needs the latest Code.gs to save log entries. Until then they wait safely on this phone.</p>` : ''}
+    ${testing() ? `<p class="muted small">Test mode: this stays on your phone and is not sent to your sheet.</p>` : ''}
+    <button class="btn primary block" data-act="plog-save">${testing() ? 'Save test entry' : 'Save'}</button>`;
+}
+
+function viewLog() {
+  if (!S.plog) S.plog = newLogDraft();
+  return `<div class="wk-head"><h2>Log how you feel</h2><button class="btn sm ghost" data-act="plog-cancel">Cancel</button></div>
+    <section class="card"><label class="field" style="margin:0"><span>Describe it like a note, or dictate with the keyboard mic</span>
+      <textarea id="plog-text" rows="3" data-plog="text" placeholder="sat on bus 40 mins hamstring 2.5/10, knees 1.5">${esc(S.plog.text)}</textarea></label>
+      <p class="muted small" id="plog-hint">${S.plog.text.trim() ? 'Filled in below. Tap anything to change it.' : 'Or skip this and use the form below.'}</p></section>
+    <div id="plog-form">${logForm()}</div>`;
+}
+
+const renderLogForm = () => { const el = $('#plog-form'); if (el) el.innerHTML = logForm(); };
+
+const itemKey = i => (i.area === 'Other' ? `Other:${(i.name || '').trim().toLowerCase()}` : i.area);
+
+/** Apply what the parser understood, without overriding anything changed by hand (tracked per area). */
+function applyParse() {
+  const d = S.plog, r = parseLog(d.text);
+  d.manual ||= {};
+  if (!d.touched.time && r.time) d.time = r.time;
+  if (!d.touched.activity) d.activity = r.activity;
+  const items = [];
+  for (const p of r.items) {
+    const k = itemKey(p);
+    if (d.manual[k] === 'removed') continue;
+    const cur = d.items.find(i => itemKey(i) === k);
+    items.push(d.manual[k] === 'edited' && cur ? cur : p);
+  }
+  for (const cur of d.items) if (d.manual[itemKey(cur)] === 'edited' && !items.includes(cur)) items.push(cur);
+  d.items = items;
+  const hint = $('#plog-hint');
+  if (hint) hint.textContent = d.text.trim() ? 'Filled in below. Tap anything to change it.' : 'Or skip this and use the form below.';
+}
+
+async function saveLog() {
+  const d = S.plog;
+  const note = parseLog(d.text).note;   // the text without a leading time, which has its own field
+  if (!note && !d.items.length) return toast('Add a score or describe how it feels first');
+  const entry = { id: uid(), date: d.date || dayStr(), time: d.time || '', activity: d.activity,
+    items: d.items.map(i => ({ area: i.area, name: (i.name || '').trim(), score: i.score })), note };
+  if (testing()) {
+    S.testPhysio.push(entry); await kvSet('test:physio', S.testPhysio);
+  } else {
+    await outboxPut({ ...entry, type: 'physio' });
+  }
+  S.plog = null; await kvDel('physioDraft');
+  await refreshPending();
+  S.view = 'today'; render(); window.scrollTo(0, 0);
+  toast(testing() ? 'Test entry saved on this phone' : 'Logged – it will sync to the Physio Diary');
+  if (!testing()) syncAll();
+}
+
+Object.assign(actions, {
+  'plog-open': () => {
+    if (!S.plog) S.plog = newLogDraft();
+    else if (!S.plog.text.trim() && !S.plog.items.length) S.plog = newLogDraft();   // stale empty draft: start fresh
+    S.view = 'log'; render(); window.scrollTo(0, 0); $('#plog-text')?.focus();
+  },
+  'plog-cancel': () => {
+    if ((S.plog?.text.trim() || S.plog?.items.length) && !confirm('Discard this entry?')) return;
+    S.plog = null; kvDel('physioDraft'); S.view = 'today'; render();
+  },
+  'plog-act': d => { S.plog.activity = d.a; S.plog.touched.activity = true; saveDraft(); renderLogForm(); },
+  'plog-add': d => {
+    if (d.a !== 'Other' && S.plog.items.some(i => i.area === d.a)) return toast(`${d.a} is already in this entry`);
+    const it = { area: d.a, name: '', score: 0 };
+    S.plog.items.push(it); (S.plog.manual ||= {})[itemKey(it)] = 'edited'; saveDraft(); renderLogForm();
+  },
+  'plog-rm': d => {
+    const [it] = S.plog.items.splice(+d.i, 1);
+    if (it) (S.plog.manual ||= {})[itemKey(it)] = 'removed';
+    saveDraft(); renderLogForm();
+  },
+  'plog-save': () => saveLog(),
+});
+
+document.addEventListener('input', e => {
+  const b = e.target.dataset.plog;
+  if (!b || !S.plog) return;
+  const [kind, i, f] = b.split(':');
+  if (kind === 'text') { S.plog.text = e.target.value; applyParse(); renderLogForm(); }
+  else if (kind === 'date' || kind === 'time') { S.plog[kind] = e.target.value; S.plog.touched[kind] = true; }
+  else if (kind === 'item') {
+    const it = S.plog.items[+i];
+    if (!it) return;
+    if (f === 'score') {
+      it.score = num(e.target.value) ?? 0;
+      const v = e.target.closest('.chk-item')?.querySelector('.chk-val');
+      if (v) v.textContent = `${it.score}/10`;
+    } else it.name = e.target.value;
+    (S.plog.manual ||= {})[itemKey(it)] = 'edited';
+  }
+  saveDraft();
+});
+
 // ───────────────────────────── boot ─────────────────────────────
 
 async function boot() {
@@ -889,6 +1019,8 @@ async function boot() {
   }
   S.testLocal = await kvGet('test:local') || [];
   S.testDone = await kvGet('test:done') || {};
+  S.testPhysio = await kvGet('test:physio') || [];
+  S.plog = await kvGet('physioDraft') || null;
   S.local = await kvGet('local') || [];
   S.done = await kvGet('done') || {};
   S.lastSync = await kvGet('lastSync') || null;

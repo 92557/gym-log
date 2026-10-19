@@ -199,3 +199,4 @@ body.testing #top { border-bottom: 2px solid var(--warn); }
 .bodymap .l3, .key.l3::before { fill: #d93636; background: #d93636; }
 .bodymap .l2, .key.l2::before { fill: #ef7b70; background: #ef7b70; }
 .bodymap .l1, .key.l1::before { fill: #f7c3bb; background: #f7c3bb; }
+.chip-btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
