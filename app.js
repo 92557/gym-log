@@ -4,7 +4,7 @@ import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
 import { ACTIVITIES, AREAS, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
 
-const VERSION = '12';   // keep in step with the cache name in sw.js
+const VERSION = '13';   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after body check-in → Physio Diary (setting name kept from v1)

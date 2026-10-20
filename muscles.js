@@ -141,6 +141,11 @@ const P = {
     feel: 'Hamstrings along the back of the thigh, slow on the way down.',
     not: 'Hips lifting off the pad, or a cramp behind the knee.',
   },
+  hamstringSlider: {
+    m: { hamstrings: 3, glutes: 2, abs: 1, calves: 1 },
+    feel: 'Hamstrings along the back of the thigh as you curl the heels in, and most of all as you slide them out slowly, with glutes holding the hips up.',
+    not: 'Hips dropping or the lower back arching to keep them up, or a cramp behind the knee; stop and reset.',
+  },
   hamstringSwitch: {
     m: { hamstrings: 3, glutes: 2, hipFlexors: 1, abs: 1 },
     feel: 'Quick, light hamstring contractions with the pelvis tilted.',
@@ -183,6 +188,7 @@ const BY_NAME = {
   'hip thrust': P.hipThrust, 'glute bridge (barbell)': P.hipThrust, 'single-leg hip thrust': P.hipThrust,
   'nordic hamstring curl': P.nordic, 'hamstring curl (machine)': P.legCurl, 'prone leg curl': P.legCurl,
   'hamstring switches': P.hamstringSwitch,
+  'hamstring sliders': P.hamstringSlider, 'hamstring slider': P.hamstringSlider, 'slider leg curl': P.hamstringSlider,
   'calf raise (machine)': P.calfRaise, 'standing calf raise': P.calfRaise, 'side bend': P.sideBend,
 };
 
@@ -195,7 +201,8 @@ const PATTERNS = [
   [/overhead|shoulder press|military|arnold/i, P.overheadPress],
   [/zercher/i, P.zercher], [/goblet/i, P.goblet], [/split squat|lunge|step-?up/i, P.singleLeg], [/squat|leg press/i, P.squat],
   [/trap-?bar/i, P.trapBar], [/single-leg rdl/i, P.singleLegRdl], [/rdl|romanian|good morning/i, P.rdl], [/deadlift/i, P.deadlift],
-  [/thrust|glute bridge/i, P.hipThrust], [/nordic/i, P.nordic], [/leg curl|hamstring curl/i, P.legCurl],
+  [/thrust|glute bridge/i, P.hipThrust], [/nordic/i, P.nordic], [/slider|sliding|ball curl|towel/i, P.hamstringSlider],
+  [/leg curl|hamstring curl/i, P.legCurl],
   [/calf/i, P.calfRaise], [/side bend/i, P.sideBend], [/hollow|dead bug|plank|crunch|leg raise/i, P.core],
 ];
 
