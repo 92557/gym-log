@@ -136,3 +136,103 @@ export function parseLog(text) {
   }
   return { time, activity, items, note: rest };
 }
+
+// ── summary for the physio ──
+
+const SHORT = { ...Object.fromEntries(ACTIVITIES.map(a => [a.name, a.short])), 'General / other': 'General' };
+const MAIN_AREAS = ['Hamstring', 'Knee/quad', 'Lower back'];
+const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (s, n) => { const [y, m, d] = s.split('-').map(Number); return dayKey(new Date(y, m - 1, d + n)); };
+const fmt = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); };
+const r1 = v => Math.round(v * 10) / 10;
+const avg = vs => vs.reduce((a, b) => a + b, 0) / vs.length;
+
+/** Physio Diary rows from the sheet → entries. Row: [date, activity, hamstring, notes, knee/quad, lower back, other, other area, id] */
+export function diaryEntries(rows) {
+  return rows.map(r => {
+    const m = /^\[(\d{2}:\d{2})\]/.exec(r[3] || '');
+    return { date: r[0], time: m ? m[1] : '', activity: r[1] || 'General / other', note: (r[3] || '').replace(/^\[\d{2}:\d{2}\]\s*/, ''),
+      scores: { 'Hamstring': r[2], 'Knee/quad': r[4], 'Lower back': r[5], 'Other': r[6] }, otherArea: r[7] || '', id: r[8] || '' };
+  });
+}
+
+/** A phone entry (queued or test) in the same shape. */
+export function appEntry(e) {
+  const scores = { 'Hamstring': null, 'Knee/quad': null, 'Lower back': null, 'Other': null };
+  const others = [];
+  for (const i of e.items) {
+    const k = MAIN_AREAS.includes(i.area) ? i.area : 'Other';
+    scores[k] = scores[k] === null ? i.score : Math.max(scores[k], i.score);
+    if (k === 'Other') others.push(i.name || 'Other');
+  }
+  return { date: e.date, time: e.time || '', activity: e.activity, note: e.note || '', scores, otherArea: others.join(', '), id: e.id };
+}
+
+/**
+ * Summary of the last `days` days up to `today` (yyyy-mm-dd), compared with the `days` before.
+ * `workouts`: [{ date, session }] from the Workout Log, used to list training in the period.
+ */
+export function summarise(entries, { days, today, workouts = [] }) {
+  const from = addDays(today, -(days - 1)), prevFrom = addDays(from, -days);
+  const inRange = (e, a, b) => e.date >= a && e.date <= b;
+  const cur = entries.filter(e => inRange(e, from, today)).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const prev = entries.filter(e => inRange(e, prevFrom, addDays(from, -1)));
+
+  const areaNames = [...MAIN_AREAS];
+  for (const e of cur) if (e.scores.Other !== null && e.otherArea) for (const n of e.otherArea.split(', ')) if (!areaNames.includes(n)) areaNames.push(n);
+  const scoreOf = (e, area) => (MAIN_AREAS.includes(area) ? e.scores[area] : e.otherArea.split(', ').includes(area) ? e.scores.Other : null);
+
+  const areas = areaNames.map(area => {
+    const scored = cur.filter(e => typeof scoreOf(e, area) === 'number');
+    const prevScored = prev.filter(e => typeof scoreOf(e, area) === 'number');
+    if (!scored.length) return { area, n: 0 };
+    const worst = scored.reduce((w, e) => (scoreOf(e, area) >= scoreOf(w, area) ? e : w));   // ties: the most recent
+    const byAct = {};
+    for (const e of scored) (byAct[e.activity] ||= []).push(scoreOf(e, area));
+    const acts = Object.entries(byAct).map(([a, vs]) => ({ activity: SHORT[a] || a, n: vs.length, avg: r1(avg(vs)), max: Math.max(...vs) }));
+    return {
+      area, n: scored.length, avg: r1(avg(scored.map(e => scoreOf(e, area)))),
+      prevAvg: prevScored.length ? r1(avg(prevScored.map(e => scoreOf(e, area)))) : null, prevN: prevScored.length,
+      worst: { score: scoreOf(worst, area), date: worst.date, time: worst.time, note: worst.note },
+      worstWhen: acts.filter(a => a.avg > 0).sort((a, b) => b.avg - a.avg || b.n - a.n).slice(0, 3),
+      fineWhen: acts.filter(a => a.max === 0).sort((a, b) => b.n - a.n).map(a => a.activity),
+    };
+  });
+
+  const flareUps = cur.flatMap(e => areaNames.map(area => ({ e, area, v: scoreOf(e, area) })))
+    .filter(x => typeof x.v === 'number' && x.v >= 3)
+    .sort((a, b) => b.v - a.v || b.e.date.localeCompare(a.e.date)).slice(0, 6);
+
+  const gym = [...new Map(workouts.filter(w => w.date >= from && w.date <= today).map(w => [`${w.date}|${w.session}`, w])).values()]
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const activityDays = {};
+  for (const e of cur) if (['Football', 'Running / parkrun', 'Cycling (own bike)', 'Padel / tennis'].includes(e.activity)) (activityDays[SHORT[e.activity]] ||= new Set()).add(e.date);
+
+  return { from, to: today, days, entries: cur.length, areas, flareUps, gym, activityDays: Object.fromEntries(Object.entries(activityDays).map(([k, v]) => [k, v.size])) };
+}
+
+/** Plain text to paste into Messages or email. */
+export function summaryText(s) {
+  const weeks = s.days % 7 === 0 ? `${s.days / 7} week${s.days > 7 ? 's' : ''}` : `${s.days} days`;
+  const L = [`Physio summary: ${fmt(s.from)} – ${fmt(s.to)} (${weeks}), ${s.entries} diary entries`, ''];
+  const before = s.days === 7 ? 'week' : weeks;
+  for (const a of s.areas) {
+    if (!a.n) { if (MAIN_AREAS.includes(a.area)) L.push(`${a.area}: no scores logged`); continue; }
+    // a trend needs a few earlier scores to mean anything
+    const trend = a.prevAvg === null ? ''
+      : a.prevN < 3 ? ` (only ${a.prevN} score${a.prevN > 1 ? 's' : ''} in the ${before} before)`
+      : a.avg < a.prevAvg ? ` (down from ${a.prevAvg} the ${before} before)` : a.avg > a.prevAvg ? ` (up from ${a.prevAvg} the ${before} before)` : ' (same as the period before)';
+    L.push(`${a.area}: average ${a.avg}/10${trend}, worst ${a.worst.score}/10 on ${fmt(a.worst.date)}${a.worst.time ? ' ' + a.worst.time : ''}. Scored ${a.n} time${a.n > 1 ? 's' : ''}.`);
+    if (a.worstWhen.length) L.push(`  Worst when: ${a.worstWhen.map(w => `${w.activity} ${w.avg}${w.n > 1 ? ` (avg of ${w.n})` : ' (once)'}`).join(', ')}`);
+    if (a.fineWhen.length) L.push(`  Fine (0) when: ${a.fineWhen.join(', ')}`);
+  }
+  if (s.flareUps.length) {
+    L.push('', 'Highest scores (3/10 or more):');
+    for (const f of s.flareUps) L.push(`- ${fmt(f.e.date)}${f.e.time ? ' ' + f.e.time : ''}, ${f.area} ${f.v}/10: ${f.e.note}`);
+  }
+  const training = [];
+  if (s.gym.length) training.push(`gym ${s.gym.length}× (${s.gym.map(g => `${g.session} ${fmt(g.date).replace(/^\w+ /, '')}`).join(', ')})`);
+  for (const [k, n] of Object.entries(s.activityDays)) training.push(`${k.toLowerCase()} ${n} day${n > 1 ? 's' : ''}`);
+  if (training.length) L.push('', `Training in this period: ${training.join('; ')}.`);
+  return L.join('\n');
+}

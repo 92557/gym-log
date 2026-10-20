@@ -2,9 +2,9 @@ import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js
 import * as R from './rir.js';
 import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
-import { ACTIVITIES, AREAS, parseLog } from './physio.js';
+import { ACTIVITIES, AREAS, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
 
-const VERSION = '11';   // keep in step with the cache name in sw.js
+const VERSION = '12';   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after body check-in → Physio Diary (setting name kept from v1)
@@ -26,6 +26,7 @@ const S = {
   testDone: {},             // test-mode "done" marks, kept apart from the real ones
   testPhysio: [],           // test-mode physio log entries (phone only)
   plog: null,               // physio log entry being written
+  psum: { days: 14, queued: [] },   // physio summary period and entries still waiting to sync
   pending: 0,
   syncing: false, lastSync: null, lastError: null,
   view: 'today',
@@ -478,7 +479,7 @@ function render() {
   const tabs = [['today', 'Today'], ...(S.current ? [['workout', 'Workout']] : []), ['progress', 'Progress'], ['settings', 'Settings']];
   if (S.view === 'workout' && !S.current) S.view = 'today';
   $('#tabs').innerHTML = tabs.map(([v, l]) => `<button data-act="nav" data-v="${v}" class="${S.view === v || (v === 'workout' && S.view === 'finish') ? 'on' : ''}">${l}</button>`).join('');
-  const views = { today: viewToday, workout: viewWorkout, finish: viewFinish, progress: viewProgress, settings: viewSettings, log: viewLog };
+  const views = { today: viewToday, workout: viewWorkout, finish: viewFinish, progress: viewProgress, settings: viewSettings, log: viewLog, psum: viewSummary };
   $('#view').innerHTML = (views[S.view] || viewToday)();
   renderRest();
 }
@@ -497,7 +498,7 @@ function viewToday() {
     h += `<section class="card test"><h2>Test mode is on</h2><p>Workouts and "Mark done" stay on this phone and are never sent to your sheet. Real unsynced workouts are untouched.</p>
       <div class="row"><button class="btn" data-act="test-off">Exit test mode</button></div></section>`;
   }
-  h += `<section class="card"><div class="row between"><h3>Physio log</h3><button class="btn primary sm" data-act="plog-open">+ Log how you feel</button></div></section>`;
+  h += `<section class="card"><div class="row between"><h3>Physio log</h3><div><button class="btn sm ghost" data-act="psum-open">Summary</button> <button class="btn primary sm" data-act="plog-open">+ Log how you feel</button></div></div></section>`;
   if (!S.settings.url || !S.settings.token) {
     h += `<section class="card warn"><h2>Connect your sheet</h2><p>Paste the setup code from Apps Script in <b>Settings</b> so workouts sync to your tracker. You can still log offline in the meantime.</p><button class="btn" data-act="nav" data-v="settings">Open Settings</button></section>`;
   }
@@ -1003,6 +1004,53 @@ document.addEventListener('input', e => {
     (S.plog.manual ||= {})[itemKey(it)] = 'edited';
   }
   saveDraft();
+});
+
+// ───────────────────────────── physio summary ─────────────────────────────
+// Built from the Physio Diary (sent by the Apps Script) plus entries still waiting on the phone,
+// as plain text that can be copied or shared with the physio.
+
+function summaryData() {
+  const fromSheet = diaryEntries(S.data?.physio || []);
+  const inSheet = new Set(fromSheet.map(e => e.id).filter(Boolean));
+  const extra = [...S.psum.queued, ...(testing() ? S.testPhysio : [])].filter(e => !inSheet.has(e.id)).map(appEntry);
+  const workouts = [
+    ...(S.data?.history || []).map(h => ({ date: h[0], session: h[1] })),
+    ...S.local.map(l => ({ date: l.date, session: l.session })),
+    ...(testing() ? S.testLocal.map(l => ({ date: l.date, session: `${l.session} (test)` })) : []),
+  ];
+  return summarise([...fromSheet, ...extra], { days: S.psum.days, today: dayStr(), workouts });
+}
+
+function viewSummary() {
+  const sum = summaryData();
+  const text = summaryText(sum);
+  const tiles = sum.areas.filter(a => a.n && ['Hamstring', 'Knee/quad', 'Lower back'].includes(a.area)).map(a => `<div><b>${a.avg}</b><span>${esc(a.area)} avg · worst ${a.worst.score}</span></div>`).join('');
+  const noDiary = !S.data?.physio;
+  return `<div class="wk-head"><h2>Physio summary</h2><button class="btn sm ghost" data-act="nav" data-v="today">Close</button></div>
+    <section class="card"><div class="seg">${[[7, '1 week'], [14, '2 weeks'], [28, '4 weeks']].map(([d, l]) =>
+      `<button data-act="psum-days" data-d="${d}" class="${S.psum.days === d ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${tiles ? `<div class="stats">${tiles}</div>` : ''}</section>
+    ${noDiary ? `<p class="warn-text small">Update the Apps Script to include your Physio Diary here. Until then only entries waiting on this phone are shown.</p>` : ''}
+    <section class="card"><div class="summary-text" id="psum-text">${esc(text)}</div></section>
+    <div class="row"><button class="btn ghost" style="flex:1" data-act="psum-copy">Copy</button>
+      ${navigator.share ? `<button class="btn primary" style="flex:1" data-act="psum-share">Share</button>` : ''}</div>`;
+}
+
+Object.assign(actions, {
+  'psum-open': async () => {
+    S.psum.queued = (await outboxAll()).filter(o => o.type === 'physio');
+    S.view = 'psum'; render(); window.scrollTo(0, 0);
+  },
+  'psum-days': d => { S.psum.days = +d.d; render(); },
+  'psum-copy': async () => {
+    try { await navigator.clipboard.writeText(summaryText(summaryData())); toast('Summary copied'); }
+    catch { toast('Could not copy – select the text and copy it instead'); }
+  },
+  'psum-share': async () => {
+    try { await navigator.share({ title: 'Physio summary', text: summaryText(summaryData()) }); }
+    catch (e) { if (e?.name !== 'AbortError') toast('Could not open sharing'); }
+  },
 });
 
 // ───────────────────────────── boot ─────────────────────────────
