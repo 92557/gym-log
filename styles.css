@@ -201,3 +201,12 @@ body.testing #top { border-bottom: 2px solid var(--warn); }
 .bodymap .l1, .key.l1::before { fill: #f7c3bb; background: #f7c3bb; }
 .chip-btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .summary-text { white-space: pre-wrap; font-size: 14px; line-height: 1.5; user-select: text; -webkit-user-select: text; }
+/* physio summary: entry list */
+.pe-day { margin: 12px 0 4px; }
+.pe { border-top: 1px solid var(--line); padding: 7px 0; }
+.pe-h { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.pe-n { font-size: 14px; margin-top: 2px; }
+.sc { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 1px 6px; margin-left: 4px; }
+.sc.ok { background: rgba(62, 207, 142, .15); color: var(--good); }
+.sc.mid { background: rgba(255, 181, 71, .15); color: var(--warn); }
+.sc.hi { background: rgba(255, 107, 107, .18); color: var(--bad); }

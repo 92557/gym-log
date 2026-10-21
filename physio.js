@@ -139,7 +139,7 @@ export function parseLog(text) {
 
 // ── summary for the physio ──
 
-const SHORT = { ...Object.fromEntries(ACTIVITIES.map(a => [a.name, a.short])), 'General / other': 'General' };
+export const SHORT = { ...Object.fromEntries(ACTIVITIES.map(a => [a.name, a.short])), 'General / other': 'General' };
 const MAIN_AREAS = ['Hamstring', 'Knee/quad', 'Lower back'];
 const dayKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const addDays = (s, n) => { const [y, m, d] = s.split('-').map(Number); return dayKey(new Date(y, m - 1, d + n)); };
@@ -208,7 +208,7 @@ export function summarise(entries, { days, today, workouts = [] }) {
   const activityDays = {};
   for (const e of cur) if (['Football', 'Running / parkrun', 'Cycling (own bike)', 'Padel / tennis'].includes(e.activity)) (activityDays[SHORT[e.activity]] ||= new Set()).add(e.date);
 
-  return { from, to: today, days, entries: cur.length, areas, flareUps, gym, activityDays: Object.fromEntries(Object.entries(activityDays).map(([k, v]) => [k, v.size])) };
+  return { from, to: today, days, entries: cur.length, list: cur, areas, flareUps, gym, activityDays: Object.fromEntries(Object.entries(activityDays).map(([k, v]) => [k, v.size])) };
 }
 
 /** Plain text to paste into Messages or email. */

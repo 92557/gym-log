@@ -2,9 +2,9 @@ import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js
 import * as R from './rir.js';
 import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
-import { ACTIVITIES, AREAS, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
+import { ACTIVITIES, AREAS, SHORT, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
 
-const VERSION = '14';
+const VERSION = '15';
 const SCRIPT_LATEST = 4;   // Apps Script api version this app expects (apps-script/Code.gs API_VERSION)   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
@@ -1036,7 +1036,27 @@ function viewSummary() {
     ${noDiary ? `<p class="warn-text small">Update the Apps Script to include your Physio Diary here. Until then only entries waiting on this phone are shown.</p>` : ''}
     <section class="card"><div class="summary-text" id="psum-text">${esc(text)}</div></section>
     <div class="row"><button class="btn ghost" style="flex:1" data-act="psum-copy">Copy</button>
-      ${navigator.share ? `<button class="btn primary" style="flex:1" data-act="psum-share">Share</button>` : ''}</div>`;
+      ${navigator.share ? `<button class="btn primary" style="flex:1" data-act="psum-share">Share</button>` : ''}</div>
+    ${entryList(sum.list)}`;
+}
+
+/** Every entry in the period, newest day first, with each area's score as a badge. */
+function entryList(list) {
+  if (!list.length) return '';
+  const badge = (label, v) => (typeof v === 'number' ? `<span class="sc ${v >= 3 ? 'hi' : v > 0 ? 'mid' : 'ok'}">${esc(label)} ${v}</span>` : '');
+  const byDay = new Map();
+  for (const e of [...list].reverse()) (byDay.get(e.date) || byDay.set(e.date, []).get(e.date)).push(e);
+  let h = `<section class="card"><h3>All entries (${list.length})</h3>`;
+  for (const [day, entries] of byDay) {
+    h += `<p class="eyebrow pe-day">${fmtDay(day)}</p>`;
+    for (const e of entries.sort((a, b) => (b.time || '').localeCompare(a.time || ''))) {
+      const badges = badge('Hamstring', e.scores.Hamstring) + badge('Knee/quad', e.scores['Knee/quad'])
+        + badge('Lower back', e.scores['Lower back']) + badge(e.otherArea || 'Other', e.scores.Other);
+      h += `<div class="pe"><div class="pe-h"><span class="muted small">${e.time ? `${esc(e.time)} · ` : ''}${esc(SHORT[e.activity] || e.activity)}</span><span>${badges}</span></div>
+        ${e.note ? `<div class="pe-n">${esc(e.note)}</div>` : ''}</div>`;
+    }
+  }
+  return h + '</section>';
 }
 
 Object.assign(actions, {
