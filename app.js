@@ -4,7 +4,8 @@ import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
 import { ACTIVITIES, AREAS, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
 
-const VERSION = '13';   // keep in step with the cache name in sw.js
+const VERSION = '14';
+const SCRIPT_LATEST = 4;   // Apps Script api version this app expects (apps-script/Code.gs API_VERSION)   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after body check-in → Physio Diary (setting name kept from v1)
@@ -700,7 +701,8 @@ function viewSettings() {
         <label class="field"><span>Token</span><input data-setting="token" value="${esc(st.token)}" autocomplete="off"></label>
       </details>
       <div class="row"><button class="btn primary" data-act="sync-now">Sync now</button></div>
-      <p class="muted small">${S.pending} change(s) waiting · ${S.lastSync ? 'last synced ' + ago(S.lastSync) : 'never synced'}${S.lastError ? ` · last error: ${esc(S.lastError)}` : ''}</p></section>
+      <p class="muted small">${S.pending} change(s) waiting · ${S.lastSync ? 'last synced ' + ago(S.lastSync) : 'never synced'}${S.lastError ? ` · last error: ${esc(S.lastError)}` : ''}</p>
+      ${S.data ? `<p class="small ${(S.data.api || 1) < SCRIPT_LATEST ? 'warn-text' : 'muted'}">Apps Script: version ${S.data.api || 1}${(S.data.api || 1) < SCRIPT_LATEST ? ` – version ${SCRIPT_LATEST} is available; paste the latest Code.gs, save, then deploy a new version` : ' (latest)'}</p>` : ''}</section>
     <section class="card"><h2>Workout</h2>
       ${tog('autoAdjust', 'Auto-adjust weights by RIR', 'After each working set, re-target the remaining sets (max +5 % / −10 %).')}
       ${tog('autoWarmups', 'Automatic warm-up ramps', 'Adds bar → 50 → 70 → 85 % sets to heavy barbell lifts with no ramp planned.')}
