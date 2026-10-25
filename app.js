@@ -4,7 +4,7 @@ import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
 import { ACTIVITIES, AREAS, SHORT, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
 
-const VERSION = '15';
+const VERSION = '16';
 const SCRIPT_LATEST = 4;   // Apps Script api version this app expects (apps-script/Code.gs API_VERSION)   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
@@ -468,8 +468,13 @@ async function syncAll({ quiet = true } = {}) {
     if (!quiet) toast(`Sync failed: ${esc(e.message)}<br>Your data is safe on the phone and will retry.`, 6000);
   } finally {
     S.syncing = false; await refreshPending();
-    // don't yank inputs out from under you mid-set
-    if (S.view !== 'workout' && S.view !== 'finish') render(); else renderStatus();
+    // Never redraw a field you're typing in: replacing it closes the iPhone keyboard.
+    const typingIn = document.activeElement?.matches?.('#view input, #view textarea, #view select') ? document.activeElement : null;
+    if (S.view === 'workout' || S.view === 'finish') renderStatus();
+    else if (typingIn) {
+      renderStatus();
+      if (S.view === 'log' && typingIn.id === 'plog-text') renderLogForm();   // the form below the note box is safe to refresh
+    } else render();
   }
 }
 
