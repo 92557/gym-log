@@ -35,6 +35,14 @@ const ACTIVITY_RULES = [
 ];
 
 export const AREAS = ['Hamstring', 'Knee/quad', 'Lower back', 'Other'];
+// Body-part chips (multi-select): the three areas with their own diary columns, then common others,
+// which are saved as Other with the name (Physio Diary columns G and H).
+export const BODY_CHIPS = [
+  { label: 'Hamstring', area: 'Hamstring' }, { label: 'Knee/quad', area: 'Knee/quad' }, { label: 'Lower back', area: 'Lower back' },
+  { label: 'Glutes', area: 'Other', name: 'Glutes' }, { label: 'Calf', area: 'Other', name: 'Calf' }, { label: 'Shin', area: 'Other', name: 'Shin' },
+  { label: 'Hip', area: 'Other', name: 'Hip' }, { label: 'Groin', area: 'Other', name: 'Groin' },
+];
+export const areaKey = i => (i.area === 'Other' ? `Other:${(i.name || '').trim().toLowerCase()}` : i.area);
 const AREA_RULES = [
   ['Hamstring', null, /\b(hamstrings?|hammy|sit[- ]?bones?|under (my )?buttock|leg|legs)\b/],
   ['Knee/quad', null, /\b(knees?|quads?|quadriceps|patella)\b/],

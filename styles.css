@@ -210,3 +210,11 @@ body.testing #top { border-bottom: 2px solid var(--warn); }
 .sc.ok { background: rgba(62, 207, 142, .15); color: var(--good); }
 .sc.mid { background: rgba(255, 181, 71, .15); color: var(--warn); }
 .sc.hi { background: rgba(255, 107, 107, .18); color: var(--bad); }
+.finish-btn { margin-top: 4px; font-size: 17px; min-height: 52px; }
+.finish-note { text-align: center; margin: -4px 0 12px; }
+/* history */
+.hist-count { margin: 0 4px 4px; }
+.hist-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; background: none; border: 0; color: inherit; font: inherit; text-align: left; padding: 0; }
+.hist-sum { margin: 6px 0 0; }
+.hist-ex { border-top: 1px solid var(--line); padding: 8px 0; font-size: 14px; }
+.hist-ex:first-of-type { margin-top: 8px; }

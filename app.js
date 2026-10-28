@@ -2,9 +2,9 @@ import { kvGet, kvSet, kvDel, outboxAll, outboxPut, outboxDelete } from './db.js
 import * as R from './rir.js';
 import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
-import { ACTIVITIES, AREAS, SHORT, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
+import { ACTIVITIES, BODY_CHIPS, areaKey, SHORT, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
 
-const VERSION = '16';
+const VERSION = '17';
 const SCRIPT_LATEST = 4;   // Apps Script api version this app expects (apps-script/Code.gs API_VERSION)   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
@@ -32,6 +32,7 @@ const S = {
   syncing: false, lastSync: null, lastError: null,
   view: 'today',
   progress: { ex: null, range: 365 },
+  hist: { open: null, limit: 20 },   // History tab: expanded workout and how many are shown
   rest: { end: 0, total: 0, fired: false },
   index: new Map(),
   lastSummary: null,
@@ -482,10 +483,10 @@ async function syncAll({ quiet = true } = {}) {
 
 function render() {
   renderStatus();
-  const tabs = [['today', 'Today'], ...(S.current ? [['workout', 'Workout']] : []), ['progress', 'Progress'], ['settings', 'Settings']];
+  const tabs = [['today', 'Today'], ...(S.current ? [['workout', 'Workout']] : []), ['history', 'History'], ['progress', 'Progress'], ['settings', 'Settings']];
   if (S.view === 'workout' && !S.current) S.view = 'today';
   $('#tabs').innerHTML = tabs.map(([v, l]) => `<button data-act="nav" data-v="${v}" class="${S.view === v || (v === 'workout' && S.view === 'finish') ? 'on' : ''}">${l}</button>`).join('');
-  const views = { today: viewToday, workout: viewWorkout, finish: viewFinish, progress: viewProgress, settings: viewSettings, log: viewLog, psum: viewSummary };
+  const views = { today: viewToday, workout: viewWorkout, finish: viewFinish, progress: viewProgress, settings: viewSettings, log: viewLog, psum: viewSummary, history: viewHistory };
   $('#view').innerHTML = (views[S.view] || viewToday)();
   renderRest();
 }
@@ -548,20 +549,47 @@ function planSummary(g) {
     `<li><b>${esc(e.name)}</b> <span class="muted">${e.n}×${e.reps ?? '?'}${e.w ? ` @ ${kg(e.w)} kg` : ''}${e.rir ? ` · RIR ${esc(e.rir)}` : ''}</span></li>`).join('')}</ul>`;
 }
 
-const CHECK_AREAS = ['Hamstring', 'Knee/quad', 'Lower back', 'Other'];
+const itemKey = areaKey;
+
+/**
+ * Multi-select body parts: each chip toggles its area on or off, "+ Other…" adds a named area,
+ * and every selected area gets a 0-10 slider. Used by the workout body check and the physio log.
+ * `bind(i, field)` returns the data attribute that the matching input handler listens to.
+ */
+function areaPicker(items, { act, rmAct, extra = '', bind }) {
+  const on = new Set(items.map(itemKey));
+  const chips = BODY_CHIPS.map(c => {
+    const k = itemKey(c), sel = on.has(k);
+    return `<button class="chip-btn ${sel ? 'on' : ''}" data-act="${act}" data-k="${esc(k)}" ${extra} aria-pressed="${sel}">${sel ? '✓ ' : ''}${esc(c.label)}</button>`;
+  }).join('') + `<button class="chip-btn" data-act="${act}" data-k="Other:" ${extra}>+ Other…</button>`;
+  const rows = items.map((it, i) => {
+    const label = it.area !== 'Other' ? `<b>${esc(it.area)}</b>`
+      : it.custom || !it.name ? `<input class="chk-name" ${bind(i, 'name')} value="${esc(it.name || '')}" placeholder="Which area? e.g. left shin" autocomplete="off">`
+      : `<b>${esc(it.name)}</b>`;
+    return `<div class="chk-item"><div class="row between">${label}<span class="chk-val">${it.score}/10</span>
+      <button class="btn sm ghost" data-act="${rmAct}" data-i="${i}" ${extra} aria-label="Remove">✕</button></div>
+      <input type="range" min="0" max="10" step="0.5" value="${it.score}" ${bind(i, 'score')}></div>`;
+  }).join('');
+  return `<p class="muted small">Tap every area you want to score, as many as you like (0 = fine). Tap again to remove.</p>
+    <div class="chips">${chips}</div>${rows}`;
+}
+
+/** Toggle a chip: add the area if it isn't selected, remove it if it is. Returns the change for manual-edit tracking. */
+function toggleArea(items, key) {
+  if (key === 'Other:') { items.push({ area: 'Other', name: '', score: 0, custom: true }); return { key, added: true }; }
+  const idx = items.findIndex(i => itemKey(i) === key);
+  if (idx >= 0) { items.splice(idx, 1); return { key, added: false }; }
+  const chip = BODY_CHIPS.find(c => itemKey(c) === key);
+  if (!chip) return null;
+  items.push({ area: chip.area, name: chip.name || '', score: 0 });
+  return { key, added: true };
+}
 
 /** Before/after check: score any area 0-10 and note anything else. Written to the Physio Diary. */
 function checkCard(when) {
   const c = S.current.checks[when] || { items: [], note: '' };
-  const items = c.items.map((it, i) => `<div class="chk-item">
-      <div class="row between">${it.area === 'Other'
-        ? `<input class="chk-name" data-bind="chk:${when}:${i}:name" value="${esc(it.name || '')}" placeholder="Which area? e.g. left shin" autocomplete="off">`
-        : `<b>${esc(it.area)}</b>`}<span class="chk-val">${it.score}/10</span><button class="btn sm ghost" data-act="chk-rm" data-w="${when}" data-i="${i}" aria-label="Remove">✕</button></div>
-      <input type="range" min="0" max="10" step="0.5" value="${it.score}" data-bind="chk:${when}:${i}:score"></div>`).join('');
   return `<section class="card chk"><h3>Body check – ${when}</h3>
-    <p class="muted small">Tap an area to score it (0 = fine). Add as many as you need.</p>
-    <div class="chips">${CHECK_AREAS.map(a => `<button class="chip-btn" data-act="chk-add" data-w="${when}" data-a="${a}">+ ${a}</button>`).join('')}</div>
-    ${items}
+    ${areaPicker(c.items, { act: 'chk-add', rmAct: 'chk-rm', extra: `data-w="${when}"`, bind: (i, f) => `data-bind="chk:${when}:${i}:${f}"` })}
     <textarea rows="2" data-bind="chknote:${when}" placeholder="Anything else? e.g. right knee stiff on stairs">${esc(c.note)}</textarea>
     <p class="muted small">${testing() ? 'Test mode: not sent' : 'Saved to the Physio Diary'}</p></section>`;
 }
@@ -570,7 +598,7 @@ const ensureCheck = when => (S.current.checks[when] ||= { items: [], note: '', t
 
 function viewWorkout() {
   const w = S.current;
-  let h = `<div class="wk-head"><div><h2>${esc(w.session)}</h2><span class="muted small" id="elapsed"></span></div><button class="btn primary" data-act="finish">Finish</button></div>`;
+  let h = `<div class="wk-head"><div><h2>${esc(w.session)}</h2><span class="muted small" id="elapsed"></span></div></div>`;
   if (S.settings.hamstring) h += checkCard('before');
   if (w.warmups.length) {
     h += `<section class="card"><h3>Warm-up</h3>${w.warmups.map((x, i) => `<label class="check ${x.done ? 'done' : ''}"><input type="checkbox" data-act="warm" data-i="${i}" ${x.done ? 'checked' : ''}> ${esc(x.text)}</label>`).join('')}</section>`;
@@ -578,6 +606,10 @@ function viewWorkout() {
   w.exercises.forEach((ex, ei) => { h += exerciseCard(ex, ei); });
   h += `<section class="card"><h3>Add exercise</h3><div class="row"><input id="add-ex" list="exlist" placeholder="Search or type a new one" autocomplete="off"><button class="btn" data-act="add-ex">Add</button></div>
     <datalist id="exlist">${[...new Set([...(S.data?.exercises || []), ...[...S.index.values()].map(e => e.name)])].sort().map(n => `<option value="${esc(n)}">`).join('')}</datalist></section>`;
+  // Finish sits at the end of the page, after the last exercise
+  const st = workoutStats(w);
+  h += `<button class="btn primary block finish-btn" data-act="finish">Finish workout</button>
+    <p class="muted small finish-note">${st.sets} working set${st.sets === 1 ? '' : 's'} ticked${st.open ? ` · ${st.open} still to do` : ''}</p>`;
   h += `<button class="btn danger block" data-act="discard">Discard workout</button>`;
   return h;
 }
@@ -678,6 +710,54 @@ function viewProgress() {
   return h;
 }
 
+// ───────────────────────────── history ─────────────────────────────
+
+/** Every logged workout (sheet, plus sessions saved on the phone that haven't synced), newest first. */
+function pastSessions() {
+  const map = new Map();
+  const add = (date, session, ex, set, w, r, rir, notes, waiting) => {
+    const k = `${date}|${session}`;
+    if (!map.has(k)) map.set(k, { key: k, date, session, exercises: new Map(), sets: 0, volume: 0, waiting });
+    const s = map.get(k);
+    if (!s.exercises.has(ex)) s.exercises.set(ex, []);
+    s.exercises.get(ex).push({ set, w: w || 0, r: r || 0, rir, notes: notes || '' });
+    s.sets++; s.volume += (w || 0) * (r || 0);
+  };
+  for (const h of S.data?.history || []) add(h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], false);
+  for (const l of S.local) for (const x of l.sets) add(l.date, l.session, x.exercise, x.set, x.weight, x.reps, x.rir, x.notes, true);
+  if (testing()) for (const l of S.testLocal) for (const x of l.sets) add(l.date, `${l.session} (test)`, x.exercise, x.set, x.weight, x.reps, x.rir, x.notes, true);
+  return [...map.values()].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+function viewHistory() {
+  const all = pastSessions();
+  if (!all.length) return `<section class="card"><h2>No workouts yet</h2><p class="muted">Connect your sheet in Settings to load your Workout Log, or finish a workout and it will appear here.</p></section>`;
+  const shown = all.slice(0, S.hist.limit);
+  let h = `<p class="muted small hist-count">${all.length} workouts logged</p>`;
+  let month = '';
+  for (const s of shown) {
+    const m = parseDay(s.date).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+    if (m !== month) { h += `<p class="eyebrow pe-day">${m}</p>`; month = m; }
+    const open = S.hist.open === s.key, names = [...s.exercises.keys()];
+    h += `<section class="card hist ${open ? 'open' : ''}">
+      <button class="hist-h" data-act="hist-open" data-k="${esc(s.key)}" aria-expanded="${open}">
+        <span><b>${esc(s.session)}</b><br><span class="muted small">${fmtDay(s.date)} · ${names.length} exercise${names.length === 1 ? '' : 's'} · ${s.sets} sets${s.volume ? ` · ${Math.round(s.volume).toLocaleString()} kg` : ''}${s.waiting ? ' · waiting to sync' : ''}</span></span>
+        <span class="muted">${open ? '▾' : '▸'}</span></button>`;
+    if (!open) h += `<p class="muted small hist-sum">${esc(names.join(' · '))}</p>`;
+    else {
+      for (const [name, sets] of s.exercises) {
+        const notes = [...new Set(sets.map(x => x.notes).filter(Boolean))];
+        h += `<div class="hist-ex"><b>${esc(name)}</b>
+          <div>${sets.map(x => `${kgFor(x.w, name)}×${x.r || '?'}${x.rir !== null && x.rir !== undefined && x.rir !== '' ? ` @${esc(x.rir)}` : ''}`).join(' · ')}</div>
+          ${notes.length ? `<div class="muted small">${esc(notes.join(' · '))}</div>` : ''}</div>`;
+      }
+    }
+    h += '</section>';
+  }
+  if (all.length > shown.length) h += `<button class="btn ghost block" data-act="hist-more">Show older workouts (${all.length - shown.length} more)</button>`;
+  return h;
+}
+
 function recentPrs() {
   const ev = [];
   for (const e of S.index.values()) {
@@ -767,11 +847,7 @@ const actions = {
     if (!v) return;
     S.current.exercises.push(exerciseFromHistory(v)); saveCurrent(); render();
   },
-  'chk-add': d => {
-    const c = ensureCheck(d.w);
-    if (d.a !== 'Other' && c.items.some(i => i.area === d.a)) return toast(`${d.a} is already in this check`);
-    c.items.push({ area: d.a, name: '', score: 0 }); c.time = hhmm(); saveCurrent(); render();
-  },
+  'chk-add': d => { const c = ensureCheck(d.w); toggleArea(c.items, d.k); c.time = hhmm(); saveCurrent(); render(); },
   'chk-rm': d => { S.current.checks[d.w].items.splice(+d.i, 1); saveCurrent(); render(); },
   feel: d => { const ex = S.current.exercises[+d.ex]; ex.showFeel = !ex.showFeel; saveCurrent(); render(); },
   finish: () => { S.view = 'finish'; render(); window.scrollTo(0, 0); },
@@ -788,6 +864,8 @@ const actions = {
     } catch { toast('Could not check for updates – are you offline?'); }
   },
   range: d => { S.progress.range = +d.d; render(); },
+  'hist-open': d => { S.hist.open = S.hist.open === d.k ? null : d.k; render(); },
+  'hist-more': () => { S.hist.limit += 20; render(); },
   'apply-code': () => {
     const raw = $('#setup-code').value.trim().replace(/^GYMLOG:/, '');
     try {
@@ -903,18 +981,13 @@ function saveDraft() {
 
 function logForm() {
   const d = S.plog;
-  const items = d.items.map((it, i) => `<div class="chk-item">
-      <div class="row between">${it.area === 'Other'
-        ? `<input class="chk-name" data-plog="item:${i}:name" value="${esc(it.name || '')}" placeholder="Which area? e.g. left shin" autocomplete="off">`
-        : `<b>${esc(it.area)}</b>`}<span class="chk-val">${it.score}/10</span><button class="btn sm ghost" data-act="plog-rm" data-i="${i}" aria-label="Remove">✕</button></div>
-      <input type="range" min="0" max="10" step="0.5" value="${it.score}" data-plog="item:${i}:score"></div>`).join('');
   const waiting = !testing() && S.data && !(S.data.api >= 3);
   return `<section class="card"><h3>When</h3><div class="row">
       <input type="date" data-plog="date" value="${esc(d.date)}"><input type="time" data-plog="time" value="${esc(d.time)}"></div></section>
     <section class="card"><h3>What were you doing?</h3><div class="chips">${ACTIVITIES.map(a =>
       `<button class="chip-btn ${d.activity === a.name ? 'on' : ''}" data-act="plog-act" data-a="${esc(a.name)}">${esc(a.short)}</button>`).join('')}</div></section>
-    <section class="card"><h3>How does it feel?</h3><p class="muted small">Tap an area to score it (0 = fine).</p>
-      <div class="chips">${AREAS.map(a => `<button class="chip-btn" data-act="plog-add" data-a="${a}">+ ${a}</button>`).join('')}</div>${items}</section>
+    <section class="card"><h3>How does it feel?</h3>
+      ${areaPicker(d.items, { act: 'plog-add', rmAct: 'plog-rm', bind: (i, f) => `data-plog="item:${i}:${f}"` })}</section>
     ${waiting ? `<p class="warn-text small">Your Apps Script needs the latest Code.gs to save log entries. Until then they wait safely on this phone.</p>` : ''}
     ${testing() ? `<p class="muted small">Test mode: this stays on your phone and is not sent to your sheet.</p>` : ''}
     <button class="btn primary block" data-act="plog-save">${testing() ? 'Save test entry' : 'Save'}</button>`;
@@ -931,7 +1004,6 @@ function viewLog() {
 
 const renderLogForm = () => { const el = $('#plog-form'); if (el) el.innerHTML = logForm(); };
 
-const itemKey = i => (i.area === 'Other' ? `Other:${(i.name || '').trim().toLowerCase()}` : i.area);
 
 /** Apply what the parser understood, without overriding anything changed by hand (tracked per area). */
 function applyParse() {
@@ -982,9 +1054,9 @@ Object.assign(actions, {
   },
   'plog-act': d => { S.plog.activity = d.a; S.plog.touched.activity = true; saveDraft(); renderLogForm(); },
   'plog-add': d => {
-    if (d.a !== 'Other' && S.plog.items.some(i => i.area === d.a)) return toast(`${d.a} is already in this entry`);
-    const it = { area: d.a, name: '', score: 0 };
-    S.plog.items.push(it); (S.plog.manual ||= {})[itemKey(it)] = 'edited'; saveDraft(); renderLogForm();
+    const ch = toggleArea(S.plog.items, d.k);
+    if (ch) (S.plog.manual ||= {})[ch.key] = ch.added ? 'edited' : 'removed';   // typing in the note won't undo a tap
+    saveDraft(); renderLogForm();
   },
   'plog-rm': d => {
     const [it] = S.plog.items.splice(+d.i, 1);
