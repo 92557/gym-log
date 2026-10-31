@@ -3,7 +3,7 @@
 
 // Same categories as the Physio Diary's Activity/Context dropdown; `short` is the chip label.
 export const ACTIVITIES = [
-  { name: 'Waking', short: 'Waking' },
+  { name: 'Waking', short: 'Waking up' },
   { name: 'Sitting - transport', short: 'Bus / transport' },
   { name: 'Sitting - other', short: 'Sitting' },
   { name: 'Sitting - hard surface', short: 'Hard seat' },
@@ -28,7 +28,7 @@ const ACTIVITY_RULES = [
   ['Football', /\b(football|5 ?a ?side|five a side)\b/],
   ['Padel / tennis', /\b(padel|paddle|tennis)\b/],
   ['Walking / hiking / standing', /\b(walk\w*|hik\w*|standing|stood|standing desk)\b/],
-  ['Waking', /\b(woke|wake|waking)\b/],
+  ['Waking', /\b(woke|wake|waking|got up|getting up|out of bed)\b/],
   ['Gym / training', /\b(gym|workout|training|lift\w*)\b/],
   ['Sitting - hard surface', /\b(hard (chair|bench|seat|stool|surface)|bench|stool|metal chair|wooden)\b/],
   ['Sitting - other', /\b(sat|sit|sitting|sofa|couch|chair|office|desk|cafe|pub|toilet|restaurant|cinema)\b/],

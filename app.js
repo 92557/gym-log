@@ -4,7 +4,7 @@ import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
 import { ACTIVITIES, BODY_CHIPS, areaKey, SHORT, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
 
-const VERSION = '17';
+const VERSION = '18';
 const SCRIPT_LATEST = 4;   // Apps Script api version this app expects (apps-script/Code.gs API_VERSION)   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
