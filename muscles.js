@@ -166,6 +166,127 @@ const P = {
     feel: 'Low abs, with your lower back pressed to the floor.',
     not: 'Lower back lifting or arching.',
   },
+  hamstringBridge: {
+    m: { hamstrings: 3, glutes: 3, abs: 1, calves: 1 },
+    feel: 'Hamstrings and glutes together holding the hips up, sit-bones tucked.',
+    not: 'Lower back arching to keep the hips up, or a calf or hamstring cramp; lower and reset.',
+  },
+  sidePlank: {
+    m: { obliques: 3, glutes: 3, abs: 2, delts_side: 1 },
+    feel: 'The side of your waist underneath and the outer hip of the top leg lifting it.',
+    not: 'Hips sagging or rolling forward, or the shoulder you are leaning on.',
+  },
+  copenhagen: {
+    m: { adductors: 3, obliques: 3, abs: 2, glutes: 1 },
+    feel: 'The inner thigh of the top leg holding you up, with the side of your waist underneath.',
+    not: 'A sharp pain in the groin or at the knee on the bench; stop if so.',
+  },
+  pallof: {
+    m: { abs: 3, obliques: 3, glutes: 1, delts_front: 1 },
+    feel: 'Deep abs and the side of your trunk stopping the band from turning you.',
+    not: 'Your torso or hips rotating, or the lower back arching.',
+  },
+  hipHike: {
+    m: { glutes: 3, obliques: 2, abs: 1, quads: 1 },
+    feel: 'The side of the standing hip lifting the free hip above level.',
+    not: 'Leaning sideways or hitching from the lower back, or a locked knee.',
+  },
+  wallSit: {
+    m: { quads: 3, glutes: 1, adductors: 1, abs: 1 },
+    feel: 'The front of your thighs, back flat on the wall.',
+    not: 'Knee pain above 3/10; slide higher up the wall.',
+  },
+  farmerCarry: {
+    m: { forearms: 3, traps: 3, abs: 2, obliques: 2, glutes: 1, calves: 1 },
+    feel: 'Grip and upper traps holding the weights, trunk braced as you walk tall.',
+    not: 'Shoulders rounding forward, or leaning back.',
+  },
+  suitcaseCarry: {
+    m: { obliques: 3, forearms: 3, abs: 2, traps: 2, glutes: 1 },
+    feel: 'The side of your waist opposite the weight stopping you from leaning, plus grip.',
+    not: 'Leaning towards the weight, or the shoulder on the loaded side dropping.',
+  },
+  medBall: {
+    m: { chest: 3, triceps: 3, delts_front: 2, abs: 1 },
+    feel: 'Chest and triceps firing fast, then absorbing the catch.',
+    not: 'Shoulders shrugging, or the lower back arching to throw.',
+  },
+  ytRaise: {
+    m: { delts_rear: 3, midBack: 3, traps: 2, delts_side: 1 },
+    feel: 'Lower traps and rear shoulders, holding the top for a second.',
+    not: 'Upper traps and neck shrugging, or swinging the weights up.',
+  },
+  externalRotation: {
+    m: { delts_rear: 3, midBack: 1 },
+    feel: 'Deep in the back of the shoulder as the forearm rotates out.',
+    not: 'The elbow leaving your side, or the upper traps joining in.',
+  },
+  deadHang: {
+    m: { forearms: 3, lats: 2, traps: 1, abs: 1 },
+    feel: 'Grip working and lats stretching, shoulders gently active rather than sunk.',
+    not: 'A pinch at the front of the shoulder.',
+  },
+  backExtension: {
+    m: { lowerBack: 3, glutes: 2, hamstrings: 2 },
+    feel: 'Back muscles holding a long, neutral spine, with glutes helping.',
+    not: 'Over-arching at the top, or a pinch in the lower back.',
+  },
+  getUp: {
+    m: { delts_front: 3, abs: 3, obliques: 3, delts_side: 2, glutes: 2, triceps: 1 },
+    feel: 'The arm overhead locked and steady while your trunk and hips move under it.',
+    not: 'The overhead shoulder wobbling or the elbow bending.',
+  },
+  // Movement screen tests: what each one checks rather than a muscle doing the work.
+  screenAnkle: {
+    m: { calves: 2 },
+    feel: 'A stretch in the calf and Achilles as the knee goes over the toes, heel down.',
+    not: 'A pinch at the front of the ankle.',
+  },
+  screenHip: {
+    m: { glutes: 2, hipFlexors: 1 },
+    feel: 'A stretch deep in the hip as the foot swings out, thigh still.',
+    not: 'Pain in the groin or knee.',
+  },
+  screenHipFlexor: {
+    m: { hipFlexors: 2, quads: 2 },
+    feel: 'A stretch at the front of the hanging hip and thigh.',
+    not: 'Lower back arching off the bench.',
+  },
+  screenHamstring: {
+    m: { hamstrings: 2, hipFlexors: 2, abs: 1 },
+    feel: 'A stretch along the back of the raised thigh, other leg flat.',
+    not: 'A sharp pull at the sit-bone; never force it.',
+  },
+  screenTSpine: {
+    m: { midBack: 2, obliques: 1 },
+    feel: 'Your upper back turning, hips staying on your heels.',
+    not: 'The lower back twisting to fake the range.',
+  },
+  screenShoulder: {
+    m: { delts_rear: 2, midBack: 1 },
+    feel: 'A stretch at the back of the shoulder, shoulder blade down.',
+    not: 'Grinding or pain at the front of the shoulder.',
+  },
+  screenOverhead: {
+    m: { lats: 2, abs: 2, delts_front: 1 },
+    feel: 'Lats and shoulders lengthening while abs keep your ribs and low back down.',
+    not: 'Ribs flaring or the lower back arching to reach the wall.',
+  },
+  screenSquat: {
+    m: { quads: 2, glutes: 2, abs: 2, delts_front: 1, calves: 1 },
+    feel: 'Legs, hips and ankles moving together with the stick staying over your feet.',
+    not: 'Heels lifting, knees caving, or knee pain above 3/10.',
+  },
+  screenSingleLeg: {
+    m: { quads: 3, glutes: 2, adductors: 1, calves: 1 },
+    feel: 'Standing-leg quad and glute controlling the knee over the toes, pelvis level.',
+    not: 'The knee diving inwards or the hip dropping.',
+  },
+  screenBalance: {
+    m: { calves: 2, glutes: 2, abs: 1 },
+    feel: 'Small adjustments in the foot, ankle and hip of the standing leg.',
+    not: 'Grabbing for support; stop when the foot moves.',
+  },
 };
 
 const BY_NAME = {
@@ -190,10 +311,25 @@ const BY_NAME = {
   'hamstring switches': P.hamstringSwitch,
   'hamstring sliders': P.hamstringSlider, 'hamstring slider': P.hamstringSlider, 'slider leg curl': P.hamstringSlider,
   'calf raise (machine)': P.calfRaise, 'standing calf raise': P.calfRaise, 'side bend': P.sideBend,
+  'hamstring bridge isometric': P.hamstringBridge, 'single-leg hamstring bridge': P.hamstringBridge,
+  'side plank + hip abduction': P.sidePlank, 'copenhagen plank (short lever)': P.copenhagen,
+  'pallof hold': P.pallof, 'hip hike': P.hipHike, 'wall sit': P.wallSit,
+  'farmer carry': P.farmerCarry, 'suitcase carry': P.suitcaseCarry, 'med-ball chest pass': P.medBall,
+  'prone y-t raise': P.ytRaise, 'cable external rotation': P.externalRotation,
+  'dead hang': P.deadHang, 'back extensor hold': P.backExtension, 'turkish get-up': P.getUp,
+  'knee-to-wall': P.screenAnkle, 'hip internal rotation (seated)': P.screenHip, 'thomas test': P.screenHipFlexor,
+  'active straight-leg raise': P.screenHamstring, 't-spine rotation': P.screenTSpine,
+  'shoulder internal rotation': P.screenShoulder, 'overhead wall test': P.screenOverhead,
+  'overhead squat': P.screenSquat, 'step-down': P.screenSingleLeg, 'y-balance anterior reach': P.screenSingleLeg,
+  'single-leg balance (eyes closed)': P.screenBalance,
 };
 
 // Names not in the tracker yet (e.g. a new lift in the Planned tab) are matched by type.
 const PATTERNS = [
+  [/copenhagen|adductor/i, P.copenhagen], [/side plank/i, P.sidePlank], [/pallof|anti-rotation/i, P.pallof],
+  [/suitcase/i, P.suitcaseCarry], [/carry|farmer/i, P.farmerCarry], [/med-?ball|chest pass|ball slam/i, P.medBall],
+  [/y-t|[yt] raise/i, P.ytRaise], [/external rotation/i, P.externalRotation], [/hamstring bridge/i, P.hamstringBridge],
+  [/hip hike/i, P.hipHike], [/wall sit/i, P.wallSit], [/dead hang/i, P.deadHang], [/get-?up/i, P.getUp],
   [/face pull|rear delt/i, P.facePull], [/muscle-?up/i, P.muscleUp], [/pull-?up|chin-?up|power pull/i, P.verticalPull],
   [/pulldown/i, P.pulldown], [/single-arm.*row|one-arm.*row/i, P.oneArmRow], [/row/i, P.horizontalRow],
   [/close-grip/i, P.closeGrip], [/incline/i, P.inclinePress], [/bench|chest press|floor press/i, P.benchPress],
