@@ -112,6 +112,17 @@ details summary { margin: 10px 0 0; }
 .wk-head { display: flex; justify-content: space-between; align-items: center; margin: 4px 2px 12px; }
 .ex.complete { opacity: .75; }
 .cue { font-size: 14px; font-style: italic; color: #c9cdd6; margin: 2px 0 6px; }
+.cue-lbl { font-style: normal; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); margin-right: 6px; }
+/* standing cues from the Exercise Cues tab */
+.cues { background: var(--card-2); border-radius: 10px; margin: 4px 0 8px; font-size: 14px; }
+.cues-h { display: flex; gap: 6px; align-items: baseline; width: 100%; text-align: left; background: none; border: 0; color: var(--text); font: inherit; padding: 7px 10px; }
+.cues-arrow { color: var(--muted); }
+.cues-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cues.open .cues-line { white-space: normal; }
+.cues p { margin: 0; padding: 0 10px 8px 26px; }
+.cue-watch { color: var(--warn); border-left: 3px solid var(--warn); padding-left: 8px !important; margin-left: 18px !important; }
+.feel .cue-watch { margin: 6px 0 !important; }
+.xsmall, .feel p.xsmall { font-size: 11px; }
 .last { font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
 .last span { color: var(--text); font-weight: 600; }
 .sets { display: flex; flex-direction: column; gap: 6px; }

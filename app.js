@@ -4,8 +4,8 @@ import { lineChart } from './charts.js';
 import { muscleInfo, bodyMap, muscleList } from './muscles.js';
 import { ACTIVITIES, BODY_CHIPS, areaKey, SHORT, parseLog, diaryEntries, appEntry, summarise, summaryText } from './physio.js';
 
-const VERSION = '19';
-const SCRIPT_LATEST = 4;   // Apps Script api version this app expects (apps-script/Code.gs API_VERSION)   // keep in step with the cache name in sw.js
+const VERSION = '20';
+const SCRIPT_LATEST = 5;   // Apps Script api version this app expects (apps-script/Code.gs API_VERSION)   // keep in step with the cache name in sw.js
 const DEFAULT_SETTINGS = {
   url: '', token: '',
   hamstring: true,          // before/after body check-in → Physio Diary (setting name kept from v1)
@@ -596,6 +596,37 @@ function checkCard(when) {
 
 const ensureCheck = when => (S.current.checks[when] ||= { items: [], note: '', time: hhmm() });
 
+// Standing cues from the sheet's Exercise Cues tab (bootstrap `cues`, Code.gs api 5), matched on trimmed, case-insensitive name.
+let cueIndex = { src: undefined, map: new Map() };
+function cuesFor(name) {
+  const src = S.data?.cues;
+  if (cueIndex.src !== src) cueIndex = { src, map: new Map(Object.entries(src || {}).map(([n, c]) => [key(n), c])) };
+  return cueIndex.map.get(key(name)) || null;
+}
+
+/** "If [wrong muscle] → [fix]" line, or whichever half the row has. */
+function cueWatch(c) {
+  const wrong = c.wrong.replace(/^[A-Z](?=[a-z ])/, ch => ch.toLowerCase());   // "If Shoulder…" reads as "If shoulder…"; leaves DB, RDL etc.
+  if (c.wrong && c.fix) return `If ${esc(wrong)} → ${esc(c.fix)}`;
+  if (c.wrong) return `Watch for: ${esc(c.wrong)}`;
+  return c.fix ? `Fix: ${esc(c.fix)}` : '';
+}
+
+/** Compact cue card: one "Feel" line, tap to open set up / move / feel / watch-for. Nothing if the exercise has no row. */
+function cueCard(c, open, attrs) {
+  if (!c) return '';
+  const watch = cueWatch(c);
+  let h = `<div class="cues ${open ? 'open' : ''}"><button class="cues-h" ${attrs} aria-expanded="${!!open}"><span class="cues-arrow">${open ? '▾' : '▸'}</span>
+    <span class="cues-line">${c.feel && !open ? `<b>Feel:</b> ${esc(c.feel)}` : '<b>Cues</b>'}</span></button>`;
+  if (open) {
+    if (c.setup) h += `<p><b>Set up:</b> ${esc(c.setup)}</p>`;
+    if (c.move) h += `<p><b>Move:</b> ${esc(c.move)}</p>`;
+    if (c.feel) h += `<p><b>Feel:</b> ${esc(c.feel)}</p>`;
+    if (watch) h += `<p class="cue-watch">${watch}</p>`;
+  }
+  return h + '</div>';
+}
+
 function viewWorkout() {
   const w = S.current;
   let h = `<div class="wk-head"><div><h2>${esc(w.session)}</h2><span class="muted small" id="elapsed"></span></div></div>`;
@@ -619,7 +650,9 @@ function exerciseCard(ex, ei) {
   const step = R.stepFor(ex.name, S.settings);
   const allDone = ex.sets.length && ex.sets.every(s => s.done);
   let h = `<section class="card ex ${allDone ? 'complete' : ''}"><div class="row between"><h3>${esc(ex.name)}</h3><span class="muted small">±${step} kg</span></div>`;
-  if (ex.cue) h += `<p class="cue">${esc(ex.cue)}</p>`;
+  if (ex.cue) h += `<p class="cue"><span class="cue-lbl">Today</span>${esc(ex.cue)}</p>`;
+  const sc = cuesFor(ex.name);
+  h += cueCard(sc, ex.showCues, `data-act="cues" data-ex="${ei}"`);
   const info = muscleInfo(ex.name);
   if (info) {
     h += `<button class="feel-toggle" data-act="feel" data-ex="${ei}" aria-expanded="${!!ex.showFeel}">${ex.showFeel ? '▾' : '▸'} Where to feel it</button>`;
@@ -627,8 +660,9 @@ function exerciseCard(ex, ei) {
       const ml = muscleList(info.m);
       h += `<div class="feel">${bodyMap(info.m)}
         <div class="legend"><span class="key l3">Main</span><span class="key l2">Assisting</span><span class="key l1">Stabilising</span></div>
-        <p><b>Feel it:</b> ${esc(info.feel)}</p><p><b>Not here:</b> ${esc(info.not)}</p>
-        <p class="muted small">Main: ${ml.main.join(', ') || '–'}${ml.assist.length ? ` · Assisting: ${ml.assist.join(', ')}` : ''}${ml.stabilise.length ? ` · Stabilising: ${ml.stabilise.join(', ')}` : ''}</p></div>`;
+        <p><b>Feel it:</b> ${esc(sc?.feel || info.feel)}</p>${sc && cueWatch(sc) ? `<p class="cue-watch">${cueWatch(sc)}</p>` : `<p><b>Not here:</b> ${esc(info.not)}</p>`}
+        <p class="muted small">Main: ${ml.main.join(', ') || '–'}${ml.assist.length ? ` · Assisting: ${ml.assist.join(', ')}` : ''}${ml.stabilise.length ? ` · Stabilising: ${ml.stabilise.join(', ')}` : ''}</p>
+        ${sc?.evidence ? `<p class="muted xsmall">Evidence: ${esc(sc.evidence)}${/^\d{4}-\d\d-\d\d$/.test(sc.updated || '') ? ` · updated ${fmtShort(sc.updated)}` : ''}</p>` : ''}</div>`;
     }
   }
   if (last) h += `<p class="last"><span>Last · ${fmtShort(last.date)}</span> ${esc(last.text)}</p>`;
@@ -701,6 +735,7 @@ function viewProgress() {
       { name: 'Total reps', cls: 's2', points: sessions.map(s => ({ x: parseDay(s.date).getTime(), y: s.sets.reduce((t, x) => t + (x.r || 0), 0) })) }];
   }
   let h = `<section class="card"><select data-act="pick-ex">${all.map(e => `<option ${e === sel ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
+    ${cueCard(cuesFor(sel.name), S.progress.showCues, 'data-act="cues-p"')}
     <div class="seg">${[[90, '3M'], [180, '6M'], [365, '1Y'], [0, 'All']].map(([d, l]) => `<button data-act="range" data-d="${d}" class="${S.progress.range === d ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${lineChart(series, { unit: weighted ? ' kg' : '' })}
     <div class="stats">${weighted ? `<div><b>${kg(sel.bestW)} kg</b><span>heaviest${sel.bestWDate ? ' · ' + fmtShort(sel.bestWDate) : ''}</span></div><div><b>${Math.round(sel.bestE)} kg</b><span>best est. 1RM</span></div>` : `<div><b>${sel.bestReps}</b><span>best reps</span></div>`}
@@ -850,6 +885,8 @@ const actions = {
   'chk-add': d => { const c = ensureCheck(d.w); toggleArea(c.items, d.k); c.time = hhmm(); saveCurrent(); render(); },
   'chk-rm': d => { S.current.checks[d.w].items.splice(+d.i, 1); saveCurrent(); render(); },
   feel: d => { const ex = S.current.exercises[+d.ex]; ex.showFeel = !ex.showFeel; saveCurrent(); render(); },
+  cues: d => { const ex = S.current.exercises[+d.ex]; ex.showCues = !ex.showCues; saveCurrent(); render(); },
+  'cues-p': () => { S.progress.showCues = !S.progress.showCues; render(); },
   finish: () => { S.view = 'finish'; render(); window.scrollTo(0, 0); },
   save: () => finishWorkout(),
   discard: async () => { if (!confirm('Discard this workout? Nothing will be saved.')) return; S.current = null; await saveCurrent(true); stopRest(); releaseWakeLock(); S.view = 'today'; render(); },
